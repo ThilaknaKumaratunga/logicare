@@ -44,39 +44,47 @@ class OptimizedRoute:
         self.total_time += segment.travel_time
     
     def get_node_sequence(self) -> List[str]:
-        """Get ordered list of nodes in the route by following edges from start."""
+        """Get ordered list of nodes using Hierholzer's algorithm for Eulerian path."""
         if not self.segments:
             return []
 
-        # Build adjacency list (from_node -> [to_nodes]) to handle multiple visits
+        # Build adjacency list with edge indices
         from collections import defaultdict
         adjacency = defaultdict(list)
+        for idx, seg in enumerate(self.segments):
+            adjacency[seg.from_node].append((seg.to_node, idx))
+
+        # Find starting node (node with outgoing > incoming, or DEPOT)
+        in_degree = defaultdict(int)
+        out_degree = defaultdict(int)
         for seg in self.segments:
-            adjacency[seg.from_node].append(seg.to_node)
+            out_degree[seg.from_node] += 1
+            in_degree[seg.to_node] += 1
 
-        # Find starting node (prefer DEPOT)
-        all_from = set(seg.from_node for seg in self.segments)
-        if 'DEPOT' in all_from:
-            current = 'DEPOT'
-        else:
-            # Find node with outgoing edge but no incoming
-            all_to = set(seg.to_node for seg in self.segments)
-            start_candidates = all_from - all_to
-            current = list(start_candidates)[0] if start_candidates else self.segments[0].from_node
+        start = 'DEPOT'
+        for node in adjacency:
+            if out_degree[node] > in_degree[node]:
+                start = node
+                break
 
-        # Follow the path by consuming edges
-        sequence = [current]
-        edges_used = 0
-        max_edges = len(self.segments)
+        # Hierholzer's algorithm to find Eulerian path
+        stack = [start]
+        path = []
+        used_edges = set()
 
-        while current in adjacency and adjacency[current] and edges_used < max_edges:
-            # Take the next available edge from current node
-            next_node = adjacency[current].pop(0)
-            sequence.append(next_node)
-            edges_used += 1
-            current = next_node
+        while stack:
+            current = stack[-1]
+            if adjacency[current]:
+                # Take next unused edge
+                next_node, edge_idx = adjacency[current].pop(0)
+                if edge_idx not in used_edges:
+                    used_edges.add(edge_idx)
+                    stack.append(next_node)
+            else:
+                # No more edges from current, backtrack
+                path.append(stack.pop())
 
-        return sequence
+        return list(reversed(path))
 
 
 class RouteOptimizer:
@@ -280,8 +288,8 @@ class RouteOptimizer:
     
     def _add_flow_conservation_constraints(self, r_vars: Dict, visit_vars: Dict,
                                           batches: List[Batch], carts: List[Cart]) -> None:
-        """Add flow conservation allowing round trips: inflow = outflow, max 2 visits per edge."""
-        logger.debug("Adding flow conservation constraints")
+        """Add simple flow conservation: inflow = outflow for all nodes."""
+        logger.info("Adding flow conservation constraints")
         constraint_count = 0
 
         for batch in batches:
@@ -290,50 +298,32 @@ class RouteOptimizer:
                     continue
 
                 for node_id in self.graph.nodes:
-                    # Sum of incoming edges
+                    # Sum of incoming and outgoing edges
                     inflow = sum(r_vars.get((j, node_id, batch.id, cart.id), 0)
                                for j in self.graph.nodes if (j, node_id, batch.id, cart.id) in r_vars)
-
-                    # Sum of outgoing edges
                     outflow = sum(r_vars.get((node_id, j, batch.id, cart.id), 0)
                                 for j in self.graph.nodes if (node_id, j, batch.id, cart.id) in r_vars)
 
-                    # Flow conservation: what comes in must go out
+                    # Flow balance: what comes in must go out
                     self.model.add_constraint(
                         inflow == outflow,
-                        ctname=f"flow_balance_{node_id}_{batch.id}_{cart.id}"
+                        ctname=f"flow_{node_id}_{batch.id}_{cart.id}"
                     )
                     constraint_count += 1
 
-                    # Limit flow to at most 2 (allows round trip on same edges)
-                    self.model.add_constraint(
-                        inflow <= 2,
-                        ctname=f"max_inflow_{node_id}_{batch.id}_{cart.id}"
-                    )
-                    self.model.add_constraint(
-                        outflow <= 2,
-                        ctname=f"max_outflow_{node_id}_{batch.id}_{cart.id}"
-                    )
-                    constraint_count += 2
-
-                    visit = visit_vars.get((node_id, batch.id, cart.id), 0)
-
                     if node_id == batch.depot_id:
-                        # Depot: inflow = outflow = visit (must all be 1)
+                        # Depot: exactly 1 in, 1 out (start and end at depot)
                         self.model.add_constraint(
-                            inflow == visit,
-                            ctname=f"depot_in_eq_visit_{batch.id}_{cart.id}"
+                            outflow == 1,
+                            ctname=f"depot_out_{batch.id}_{cart.id}"
                         )
-                        self.model.add_constraint(
-                            outflow == visit,
-                            ctname=f"depot_out_eq_visit_{batch.id}_{cart.id}"
-                        )
-                        constraint_count += 2
+                        constraint_count += 1
                     else:
-                        # Non-depot: if visit=1, must have inflow >= 1
+                        # Non-depot nodes: if visit=1, must have flow
+                        visit = visit_vars.get((node_id, batch.id, cart.id), 0)
                         self.model.add_constraint(
                             inflow >= visit,
-                            ctname=f"visit_needs_flow_{node_id}_{batch.id}_{cart.id}"
+                            ctname=f"visit_flow_{node_id}_{batch.id}_{cart.id}"
                         )
                         constraint_count += 1
 
@@ -353,18 +343,8 @@ class RouteOptimizer:
 
         for batch in batches:
             required_locations = batch.get_required_locations()
-            pick_locations = {loc for loc in required_locations if loc != batch.depot_id}
-            logger.info(f"Batch {batch.id} requires visits to pick locations: {pick_locations}")
-
-            # Force depot visit = 1 (ensures route starts and ends at depot)
-            for cart in carts:
-                if batch.can_fit_in_cart(cart):
-                    depot_visit = visit_vars.get((batch.depot_id, batch.id, cart.id), 0)
-                    self.model.add_constraint(
-                        depot_visit == 1,
-                        ctname=f"depot_must_visit_{batch.id}_{cart.id}"
-                    )
-                    constraint_count += 1
+            pick_locations = [loc for loc in required_locations if loc != batch.depot_id]
+            logger.info(f"Batch {batch.id} requires {len(pick_locations)} pick locations")
 
             for location in pick_locations:
                 if location not in self.graph.nodes:
@@ -402,7 +382,7 @@ class RouteOptimizer:
         For nodes with visit=1, we enforce ordering.
         For nodes with visit=0 (pass-through), no ordering constraint.
         """
-        logger.info("Adding standard MTZ subtour elimination")
+        logger.info("Adding flow-based subtour elimination")
         constraint_count = 0
         n = len(self.graph.nodes)
 
@@ -411,26 +391,54 @@ class RouteOptimizer:
                 if not batch.can_fit_in_cart(cart):
                     continue
 
-                for (i, j, b_id, k_id), var in r_vars.items():
-                    if b_id != batch.id or k_id != cart.id:
-                        continue
+                # Create commodity flow variables
+                # f[i,j] = amount of "potential" flowing on edge (i,j)
+                f_vars = {}
+                for (i, j, b_id, k_id), route_var in r_vars.items():
+                    if b_id == batch.id and k_id == cart.id:
+                        f_var_name = f"f_{i}_{j}_{batch.id}_{cart.id}"
+                        f_vars[(i, j, batch.id, cart.id)] = self.model.continuous_var(
+                            lb=0, ub=n-1, name=f_var_name
+                        )
 
-                    # Skip depot edges
-                    if i == batch.depot_id or j == batch.depot_id:
-                        continue
+                # Flow conservation: depot is source, other nodes consume if visited
+                for node_id in self.graph.nodes:
+                    f_inflow = sum(f_vars.get((j, node_id, batch.id, cart.id), 0)
+                                  for j in self.graph.nodes
+                                  if (j, node_id, batch.id, cart.id) in f_vars)
+                    f_outflow = sum(f_vars.get((node_id, j, batch.id, cart.id), 0)
+                                   for j in self.graph.nodes
+                                   if (node_id, j, batch.id, cart.id) in f_vars)
 
-                    order_i = order_vars.get((i, batch.id, cart.id), 0)
-                    order_j = order_vars.get((j, batch.id, cart.id), 0)
+                    if node_id == batch.depot_id:
+                        # Depot: supplies commodity = number of visited non-depot nodes
+                        supply = sum(visit_vars.get((nid, batch.id, cart.id), 0)
+                                   for nid in self.graph.nodes if nid != batch.depot_id)
+                        self.model.add_constraint(
+                            f_outflow - f_inflow == supply,
+                            ctname=f"flow_depot_{batch.id}_{cart.id}"
+                        )
+                        constraint_count += 1
+                    else:
+                        # Non-depot: consumes 1 unit if visited
+                        visit = visit_vars.get((node_id, batch.id, cart.id), 0)
+                        self.model.add_constraint(
+                            f_inflow - f_outflow == visit,
+                            ctname=f"flow_node_{node_id}_{batch.id}_{cart.id}"
+                        )
+                        constraint_count += 1
 
-                    # Standard MTZ: if edge (i,j) is used, order[j] >= order[i] + 1
-                    # order[j] >= order[i] + 1 - n*(1 - r[i,j])
-                    self.model.add_constraint(
-                        order_j >= order_i + 1 - n * (1 - var),
-                        ctname=f"mtz_{i}_{j}_{batch.id}_{cart.id}"
-                    )
-                    constraint_count += 1
+                # Link flow to route: f[i,j] <= (n-1) * r[i,j]
+                for (i, j, b_id, k_id), route_var in r_vars.items():
+                    if b_id == batch.id and k_id == cart.id:
+                        f_var = f_vars.get((i, j, batch.id, cart.id), 0)
+                        self.model.add_constraint(
+                            f_var <= (n-1) * route_var,
+                            ctname=f"flow_link_{i}_{j}_{batch.id}_{cart.id}"
+                        )
+                        constraint_count += 1
 
-        logger.info(f"Added {constraint_count} MTZ subtour elimination constraints")
+        logger.info(f"Added {constraint_count} flow-based constraints")
     
     def _extract_routes(self, solution, r_vars: Dict, batches: List[Batch],
                        carts: List[Cart]) -> Dict[str, OptimizedRoute]:
