@@ -91,8 +91,12 @@ class JSONLayoutImporter(CADAdapterInterface):
 
         # Check which format is being used
         if 'warehouse' in data:
-            # Format 2: Aisle-based warehouse
-            return self._import_aisle_based_layout(data['warehouse'])
+            warehouse_data = data['warehouse']
+            # Check if it's double-sided layout (has 'sides' in locations)
+            if warehouse_data.get('locations') and isinstance(warehouse_data['locations'][0].get('sides'), dict):
+                return self._import_double_sided_layout(warehouse_data)
+            # Format 2: Aisle-based warehouse (single-sided)
+            return self._import_aisle_based_layout(warehouse_data)
 
         # Format 1: Direct nodes/edges
         # Import nodes
@@ -179,6 +183,105 @@ class JSONLayoutImporter(CADAdapterInterface):
         graph.build_adjacency_lists()
 
         return graph
+
+    def _import_double_sided_layout(self, warehouse_data: dict) -> WarehouseGraph:
+        """Import warehouse layout with double-sided aisles and cross-aisle passages."""
+        graph = WarehouseGraph()
+
+        start = warehouse_data.get('start', {'x': 0, 'y': 0, 'z': 0})
+
+        # Add depot node
+        depot_node = Node(
+            id=start.get('id', 'DEPOT'),
+            x=start['x'],
+            y=start['y'],
+            z=start.get('z', 0),
+            node_type='depot',
+            metadata={'start': True}
+        )
+        graph.add_node(depot_node)
+
+        # Get passage levels
+        passages = warehouse_data.get('passages', {}).get('horizontal', [0, 12])
+
+        # Track all nodes by coordinates for cross-aisle connections
+        nodes_by_coord = {}  # (x, y) -> node
+
+        # Import all storage locations
+        for location_group in warehouse_data.get('locations', []):
+            aisle_id = location_group.get('aisle', 'UNKNOWN')
+            sides = location_group.get('sides', {})
+
+            for side_id, cells in sides.items():
+                for cell in cells:
+                    node_id = cell.get('id', f"{aisle_id}-{side_id}-{cell['y']}")
+                    node = Node(
+                        id=node_id,
+                        x=cell['x'],
+                        y=cell['y'],
+                        z=cell.get('z', 0),
+                        node_type='product',
+                        metadata={'aisle': aisle_id, 'side': side_id}
+                    )
+                    graph.add_node(node)
+                    nodes_by_coord[(cell['x'], cell['y'])] = node
+
+        # Generate edges
+        self._generate_double_sided_edges(graph, depot_node, nodes_by_coord, passages)
+
+        # Build adjacency lists
+        graph.build_adjacency_lists()
+
+        return graph
+
+    def _generate_double_sided_edges(self, graph: WarehouseGraph, depot: Node,
+                                     nodes_by_coord: dict, passages: list) -> None:
+        """Generate edges for double-sided warehouse with cross-aisle passages."""
+
+        def add_edge(from_id: str, to_id: str, edge_type: str = 'internal'):
+            from_node = graph.nodes.get(from_id)
+            to_node = graph.nodes.get(to_id)
+            if from_node and to_node:
+                distance = abs(from_node.x - to_node.x) + abs(from_node.y - to_node.y)
+                edge = Edge(
+                    from_node=from_id,
+                    to_node=to_id,
+                    travel_time=distance,
+                    distance=distance,
+                    bidirectional=True,
+                    direction_allowed='both',
+                    metadata={'type': edge_type}
+                )
+                graph.add_edge(edge)
+
+        # 1. Connect depot to lowest level nodes for all x-coordinates
+        # Find minimum y value in the warehouse
+        min_y = min(y for x, y in nodes_by_coord.keys())
+        passage_nodes_at_bottom = [(x, y, nid) for (x, y), n in nodes_by_coord.items()
+                                   if y == min_y for nid in [n.id]]
+        for x, y, node_id in passage_nodes_at_bottom:
+            add_edge(depot.id, node_id, 'depot_to_passage')
+
+        # 2. Vertical connections within same x-coordinate (along aisle sides)
+        by_x = {}
+        for (x, y), node in nodes_by_coord.items():
+            if x not in by_x:
+                by_x[x] = []
+            by_x[x].append((y, node.id))
+
+        for x, nodes in by_x.items():
+            nodes.sort()  # Sort by y
+            for i in range(len(nodes) - 1):
+                add_edge(nodes[i][1], nodes[i+1][1], 'vertical')
+
+        # 3. Horizontal cross-aisle connections at passage levels
+        for passage_y in passages:
+            nodes_at_passage = [(x, nid) for (x, y), n in nodes_by_coord.items()
+                               if y == passage_y for nid in [n.id]]
+            nodes_at_passage.sort()  # Sort by x
+
+            for i in range(len(nodes_at_passage) - 1):
+                add_edge(nodes_at_passage[i][1], nodes_at_passage[i+1][1], 'cross_aisle')
 
     def _generate_edges_from_cells(self, graph: WarehouseGraph, depot: Node, cells: list) -> None:
         """Generate edges for warehouse with passages."""

@@ -245,7 +245,7 @@ class RouteVisualizer:
             pick_locations: Optional list of locations where items are picked (highlighted in red)
         """
         # First plot the base layout
-        self.plot_layout(figsize=figsize, show_edge_labels=True,
+        self.plot_layout(figsize=figsize, show_edge_labels=False,
                         title=f"Optimized Route - Batch {batch_id}, Cart {cart_id}")
         
         G = self.create_networkx_graph()
@@ -261,10 +261,7 @@ class RouteVisualizer:
             edge_color=route_color,
             width=4,
             alpha=0.8,
-            arrows=True,
-            arrowsize=25,
-            arrowstyle='->',
-            connectionstyle='arc3,rad=0.1',
+            arrows=False,
             ax=self.ax
         )
         
@@ -322,20 +319,11 @@ class RouteVisualizer:
                 ax=self.ax
             )
         
-        # Calculate and display route statistics
-        total_time = sum(
-            self.graph.edges_dict.get((route[i], route[i+1]), 
-                                     self.graph.edges_dict.get((route[i+1], route[i]))).travel_time
-            for i in range(len(route)-1)
-            if (route[i], route[i+1]) in self.graph.edges_dict or (route[i+1], route[i]) in self.graph.edges_dict
-        )
-        
         # Build stats text with cart information
         stats_lines = [
             f"Batch: {batch_id}",
             f"Cart: {cart_id}",
-            f"Route Length: {len(route)} nodes",
-            f"Travel Time: {total_time:.2f} units"
+            f"Route Length: {len(route)} nodes"
         ]
 
         # Add cart details if provided
