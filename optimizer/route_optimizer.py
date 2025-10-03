@@ -6,11 +6,11 @@ with support for multiple batches, carts, directional constraints, and subtour e
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple, Set
+from typing import Dict, List, Optional
 from docplex.mp.model import Model
 from dataclasses import dataclass, field
 
-from graph.graph import WarehouseGraph, Node, Edge
+from graph.graph import WarehouseGraph
 from optimizer.batch import Batch, Cart
 
 # Configure logging
@@ -25,7 +25,6 @@ class RouteSegment:
     batch_id: str
     cart_id: str
     travel_time: float
-    sequence_order: int = 0
 
 
 @dataclass
@@ -35,7 +34,6 @@ class OptimizedRoute:
     cart_id: str
     segments: List[RouteSegment] = field(default_factory=list)
     total_time: float = 0.0
-    total_distance: float = 0.0
     nodes_visited: List[str] = field(default_factory=list)
     
     def add_segment(self, segment: RouteSegment) -> None:
@@ -90,13 +88,8 @@ class OptimizedRoute:
 class RouteOptimizer:
     """
     DOcplex-based route optimizer for warehouse picking.
-    
-    Implements:
-    - Multi-batch, multi-cart optimization
-    - Directional constraints (one-way aisles)
-    - Subtour elimination (MTZ formulation)
-    - Flow conservation
-    - Depot constraints
+
+    Uses flow-based subtour elimination to allow backtracking while preventing isolated subtours.
     """
     
     def __init__(self, graph: WarehouseGraph, time_limit: Optional[int] = 300):
@@ -171,9 +164,7 @@ class RouteOptimizer:
         # Add constraints
         logger.info("Adding constraints...")
         self._add_flow_conservation_constraints(r_vars, visit_vars, batches, carts)
-        self._add_depot_constraints(r_vars, visit_vars, batches, carts)
         self._add_visit_requirements(visit_vars, batches, carts)
-        self._add_directional_constraints(r_vars, batches, carts)
         self._add_subtour_elimination(r_vars, order_vars, visit_vars, batches, carts)
 
         stats = self.get_model_statistics()
@@ -328,13 +319,7 @@ class RouteOptimizer:
                         constraint_count += 1
 
         logger.info(f"Added {constraint_count} flow conservation constraints")
-    
-    def _add_depot_constraints(self, r_vars: Dict, visit_vars: Dict,
-                              batches: List[Batch], carts: List[Cart]) -> None:
-        """Depot constraints now handled in flow conservation."""
-        logger.debug("Depot constraints handled in flow conservation")
-        pass
-    
+
     def _add_visit_requirements(self, visit_vars: Dict, batches: List[Batch],
                                carts: List[Cart]) -> None:
         """Force visits to all required picking locations."""
@@ -360,15 +345,8 @@ class RouteOptimizer:
                 )
                 constraint_count += 1
 
-        logger.debug(f"Added {constraint_count} visit requirement constraints")
-    
-    def _add_directional_constraints(self, r_vars: Dict, batches: List[Batch],
-                                    carts: List[Cart]) -> None:
-        """Ensure directional constraints are respected (already handled in variable creation)."""
-        # Directional constraints are implicitly enforced by only creating
-        # variables for valid edge directions
-        pass
-    
+        logger.info(f"Added {constraint_count} visit requirement constraints")
+
     def _add_subtour_elimination(self, r_vars: Dict, order_vars: Dict, visit_vars: Dict,
                                 batches: List[Batch], carts: List[Cart]) -> None:
         """
