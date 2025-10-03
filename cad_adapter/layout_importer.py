@@ -201,8 +201,12 @@ class JSONLayoutImporter(CADAdapterInterface):
         )
         graph.add_node(depot_node)
 
-        # Get passage levels
-        passages = warehouse_data.get('passages', {}).get('horizontal', [0, 12])
+        # Get passage levels (handle both old and new format)
+        passages_data = warehouse_data.get('passages', {}).get('horizontal', [0, 12])
+        if passages_data and isinstance(passages_data[0], dict):
+            passages = [p['y'] for p in passages_data]
+        else:
+            passages = passages_data
 
         # Track all nodes by coordinates for cross-aisle connections
         nodes_by_coord = {}  # (x, y) -> node
@@ -236,7 +240,11 @@ class JSONLayoutImporter(CADAdapterInterface):
 
     def _generate_double_sided_edges(self, graph: WarehouseGraph, depot: Node,
                                      nodes_by_coord: dict, passages: list) -> None:
-        """Generate edges for double-sided warehouse with cross-aisle passages."""
+        """Generate edges for double-sided warehouse with passage-based routing.
+
+        Key design: All vertical movement happens through passage nodes at specific y-levels.
+        Storage blocks connect horizontally to passages only.
+        """
 
         def add_edge(from_id: str, to_id: str, edge_type: str = 'internal'):
             from_node = graph.nodes.get(from_id)
@@ -254,27 +262,62 @@ class JSONLayoutImporter(CADAdapterInterface):
                 )
                 graph.add_edge(edge)
 
-        # 1. Connect depot to lowest level nodes for all x-coordinates
-        # Find minimum y value in the warehouse
-        min_y = min(y for x, y in nodes_by_coord.keys())
-        passage_nodes_at_bottom = [(x, y, nid) for (x, y), n in nodes_by_coord.items()
-                                   if y == min_y for nid in [n.id]]
-        for x, y, node_id in passage_nodes_at_bottom:
-            add_edge(depot.id, node_id, 'depot_to_passage')
-
-        # 2. Vertical connections within same x-coordinate (along aisle sides)
+        # Group nodes by x (aisle sides) and y (passage levels)
         by_x = {}
         for (x, y), node in nodes_by_coord.items():
             if x not in by_x:
                 by_x[x] = []
             by_x[x].append((y, node.id))
 
-        for x, nodes in by_x.items():
-            nodes.sort()  # Sort by y
-            for i in range(len(nodes) - 1):
-                add_edge(nodes[i][1], nodes[i+1][1], 'vertical')
+        # Sort each column by y
+        for x in by_x:
+            by_x[x].sort()
 
-        # 3. Horizontal cross-aisle connections at passage levels
+        # 1. Connect depot to passage nodes at min_y
+        min_y = min(y for x, y in nodes_by_coord.keys())
+        for x in by_x:
+            nodes_in_col = by_x[x]
+            if nodes_in_col and nodes_in_col[0][0] == min_y:
+                add_edge(depot.id, nodes_in_col[0][1], 'depot_to_passage')
+
+        # 2. For each aisle side (x-coordinate), connect blocks to passage nodes
+        # Only storage blocks at passage y-levels are accessible
+        for x in by_x:
+            nodes_in_col = by_x[x]
+
+            # Connect each storage block to nearest passage nodes (up/down)
+            for i, (y, node_id) in enumerate(nodes_in_col):
+                if y not in passages:
+                    # Non-passage node - connect to nearest passage above and below
+                    # Find nearest passage below
+                    passage_below = None
+                    for j in range(i-1, -1, -1):
+                        if nodes_in_col[j][0] in passages:
+                            passage_below = nodes_in_col[j][1]
+                            break
+
+                    # Find nearest passage above
+                    passage_above = None
+                    for j in range(i+1, len(nodes_in_col)):
+                        if nodes_in_col[j][0] in passages:
+                            passage_above = nodes_in_col[j][1]
+                            break
+
+                    # Connect to passages
+                    if passage_below:
+                        add_edge(node_id, passage_below, 'to_passage')
+                    if passage_above:
+                        add_edge(node_id, passage_above, 'to_passage')
+
+        # 3. Vertical connections between passage nodes on same x-coordinate
+        for x in by_x:
+            passage_nodes_in_col = [(y, nid) for y, nid in by_x[x] if y in passages]
+            passage_nodes_in_col.sort()
+
+            for i in range(len(passage_nodes_in_col) - 1):
+                add_edge(passage_nodes_in_col[i][1], passage_nodes_in_col[i+1][1], 'vertical_passage')
+
+        # 4. Horizontal connections across aisles at passage levels
         for passage_y in passages:
             nodes_at_passage = [(x, nid) for (x, y), n in nodes_by_coord.items()
                                if y == passage_y for nid in [n.id]]

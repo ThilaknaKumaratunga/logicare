@@ -38,13 +38,17 @@ class RouteVisualizer:
             NetworkX directed graph
         """
         G = nx.DiGraph()
-        
-        # Add nodes with positions
+
+        # Add nodes with adjusted positions for visualization
         for node_id, node in self.graph.nodes.items():
+            # Map logical coordinates to visual coordinates
+            # Storage blocks are offset from passage corridors
+            visual_x, visual_y = self._get_visual_position(node)
             G.add_node(
-                node_id, 
-                pos=(node.x, node.y),
-                node_type=node.metadata.get('type', 'location')
+                node_id,
+                pos=(visual_x, visual_y),
+                node_type=node.metadata.get('type', 'location'),
+                logical_pos=(node.x, node.y)
             )
         
         # Add edges with attributes
@@ -68,7 +72,87 @@ class RouteVisualizer:
                 )
         
         return G
-    
+
+    def _get_visual_position(self, node):
+        """Map logical coordinates to visual coordinates.
+
+        Layout:
+        - Vertical aisles at x=1, 4, 7 (passages between L and R)
+        - Storage blocks offset from passages:
+          - A01-L (x=0) -> visual x=-1
+          - A01-R (x=2) -> visual x=1
+          - A02-L (x=3) -> visual x=3
+          - A02-R (x=5) -> visual x=5
+          - A03-L (x=6) -> visual x=6
+          - A03-R (x=8) -> visual x=8
+        - Horizontal passages at y=1, y=12 stay as is
+        """
+        x, y = node.x, node.y
+
+        if node.node_type == 'depot':
+            # Depot stays at original position
+            return (x, y)
+
+        # Map storage block x-coordinates to visual positions
+        # Keep blocks at their logical x, passages will be drawn at x=1, 4, 7
+        return (x, y)
+
+    def _draw_passages(self) -> None:
+        """Draw passage corridors where movement occurs."""
+        if not self.ax:
+            return
+
+        all_nodes = [n for n in self.graph.nodes.values() if n.node_type != 'depot']
+        if not all_nodes:
+            return
+
+        # Get y-range
+        all_y = [n.y for n in all_nodes]
+        min_y, max_y = min(all_y), max(all_y)
+
+        # Draw vertical aisle corridors at x=1, x=4, x=7
+        # These are the passages between L and R sides
+        aisle_passages = [1, 4, 7]
+        for passage_x in aisle_passages:
+            aisle_rect = mpatches.Rectangle(
+                (passage_x - 0.3, min_y - 0.5),
+                0.6,
+                max_y - min_y + 1.0,
+                linewidth=1,
+                edgecolor='gray',
+                facecolor='lightgray',
+                alpha=0.4,
+                zorder=0
+            )
+            self.ax.add_patch(aisle_rect)
+
+        # Extract horizontal passage y-levels from cross_aisle edges
+        passage_y_levels = set()
+        for edge in self.graph.edges:
+            if edge.metadata.get('type') == 'cross_aisle':
+                from_node = self.graph.nodes.get(edge.from_node)
+                to_node = self.graph.nodes.get(edge.to_node)
+                if from_node and to_node and from_node.y == to_node.y:
+                    passage_y_levels.add(from_node.y)
+
+        # Draw horizontal cross-aisle passages
+        if passage_y_levels:
+            all_x = [n.x for n in all_nodes]
+            min_x, max_x = min(all_x), max(all_x)
+
+            for passage_y in sorted(passage_y_levels):
+                passage_rect = mpatches.Rectangle(
+                    (min_x - 0.5, passage_y - 0.3),
+                    max_x - min_x + 1.0,
+                    0.6,
+                    linewidth=1,
+                    edgecolor='orange',
+                    facecolor='lightyellow',
+                    alpha=0.4,
+                    zorder=0
+                )
+                self.ax.add_patch(passage_rect)
+
     def _draw_aisle_rectangles(self, ax, pos, node_types):
         """Draw rectangular aisles as connected blocks."""
         # Draw depot rectangle first
@@ -247,7 +331,10 @@ class RouteVisualizer:
         # First plot the base layout
         self.plot_layout(figsize=figsize, show_edge_labels=False,
                         title=f"Optimized Route - Batch {batch_id}, Cart {cart_id}")
-        
+
+        # Draw passage corridors
+        self._draw_passages()
+
         G = self.create_networkx_graph()
         pos = nx.get_node_attributes(G, 'pos')
         
