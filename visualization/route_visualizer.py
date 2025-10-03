@@ -76,26 +76,141 @@ class RouteVisualizer:
     def _get_visual_position(self, node):
         """Map logical coordinates to visual coordinates.
 
-        Layout:
-        - Vertical aisles at x=1, 4, 7 (passages between L and R)
-        - Storage blocks offset from passages:
-          - A01-L (x=0) -> visual x=-1
-          - A01-R (x=2) -> visual x=1
-          - A02-L (x=3) -> visual x=3
-          - A02-R (x=5) -> visual x=5
-          - A03-L (x=6) -> visual x=6
-          - A03-R (x=8) -> visual x=8
-        - Horizontal passages at y=1, y=12 stay as is
+        Storage blocks at passage y-levels (1, 12) are offset visually
+        so passages appear as open corridors.
         """
         x, y = node.x, node.y
 
         if node.node_type == 'depot':
-            # Depot stays at original position
             return (x, y)
 
-        # Map storage block x-coordinates to visual positions
-        # Keep blocks at their logical x, passages will be drawn at x=1, 4, 7
+        # Offset storage blocks at passage y-levels
+        passage_levels = [1, 12]
+        if y in passage_levels:
+            # Shift blocks slightly away from passage corridor
+            # Blocks at y=1 shift to y=1.3, blocks at y=12 shift to y=11.7
+            if y == 1:
+                visual_y = y + 0.3
+            elif y == 12:
+                visual_y = y - 0.3
+            else:
+                visual_y = y
+            return (x, visual_y)
+
         return (x, y)
+
+    def _draw_route_through_passages(self, route: List[str], pos: dict, route_color: str) -> None:
+        """Draw route path through passage corridors instead of direct lines.
+
+        For each edge in the route, determine waypoints through passages:
+        - If both nodes at same passage y-level: draw horizontal
+        - If different y-levels: route through nearest passage corridor
+        """
+        if not self.ax or len(route) < 2:
+            return
+
+        # Passage coordinates (vertical aisles and horizontal passages)
+        vertical_passages = [1, 4, 7]  # x-coordinates of vertical aisle passages
+        horizontal_passages = [1, 12]  # y-coordinates of horizontal cross-aisle passages
+
+        for i in range(len(route) - 1):
+            from_node = route[i]
+            to_node = route[i + 1]
+
+            if from_node not in pos or to_node not in pos:
+                continue
+
+            from_x, from_y = pos[from_node]
+            to_x, to_y = pos[to_node]
+
+            # Get logical positions (before visual offset)
+            from_node_obj = self.graph.nodes.get(from_node)
+            to_node_obj = self.graph.nodes.get(to_node)
+            from_logical_x, from_logical_y = from_node_obj.x, from_node_obj.y
+            to_logical_x, to_logical_y = to_node_obj.x, to_node_obj.y
+
+            # Get edge metadata to determine routing
+            edge_type = None
+            for edge in self.graph.edges:
+                if (edge.from_node == from_node and edge.to_node == to_node) or \
+                   (edge.to_node == from_node and edge.from_node == to_node):
+                    edge_type = edge.metadata.get('type')
+                    break
+
+            # Build waypoints based on edge type and positions
+            waypoints = [(from_x, from_y)]
+
+            # Determine which vertical passage to use based on x-coordinate
+            # A01 (x=0,2) uses passage at x=1
+            # A02 (x=3,5) uses passage at x=4
+            # A03 (x=6,8) uses passage at x=7
+            if from_x <= 2:
+                aisle_passage_x = 1
+            elif from_x <= 5:
+                aisle_passage_x = 4
+            else:
+                aisle_passage_x = 7
+
+            if edge_type == 'depot_to_passage':
+                # Movement from depot to passage nodes
+                # Route along horizontal passage at y=1 (or depot y-level)
+                if from_y != to_y:
+                    # Depot at different y than target - go vertical first then horizontal
+                    waypoints.append((from_x, to_y))  # Move to passage y-level
+                waypoints.append((to_x, to_y))  # Move horizontally along passage
+            elif edge_type == 'cross_aisle':
+                # Horizontal movement along passage
+                # Check if we're crossing through an aisle (need to route through vertical passage)
+                # Determine target aisle passage
+                if to_x <= 2:
+                    target_aisle_passage_x = 1
+                elif to_x <= 5:
+                    target_aisle_passage_x = 4
+                else:
+                    target_aisle_passage_x = 7
+
+                # Check if from and to are in same aisle
+                same_aisle = (from_x <= 2 and to_x <= 2) or \
+                            (3 <= from_x <= 5 and 3 <= to_x <= 5) or \
+                            (6 <= from_x and 6 <= to_x)
+
+                if same_aisle and from_x != to_x:
+                    # Within same aisle but different sides (L to R or R to L)
+                    # Route through vertical aisle passage
+                    waypoints.append((target_aisle_passage_x, from_y))
+                    waypoints.append((target_aisle_passage_x, to_y))
+                    waypoints.append((to_x, to_y))
+                else:
+                    # Across aisles - stay on horizontal passage
+                    waypoints.append((to_x, to_y))
+            elif edge_type == 'to_passage':
+                # Movement from storage block to passage node
+                # Must route through the vertical aisle passage
+                if from_y != to_y:
+                    # Different y-levels: go through vertical passage
+                    waypoints.append((aisle_passage_x, from_y))  # Enter passage
+                    waypoints.append((aisle_passage_x, to_y))    # Move vertically in passage
+                    waypoints.append((to_x, to_y))               # Exit to storage block
+                else:
+                    # Same y-level: horizontal movement
+                    waypoints.append((to_x, to_y))
+            elif edge_type == 'vertical_passage':
+                # Vertical movement between passage levels on same aisle
+                waypoints.append((aisle_passage_x, from_y))  # Enter vertical passage
+                waypoints.append((aisle_passage_x, to_y))    # Move vertically
+                waypoints.append((to_x, to_y))               # Exit passage
+            else:
+                # Default: route through passage if different y-levels
+                if from_y != to_y:
+                    waypoints.append((aisle_passage_x, from_y))
+                    waypoints.append((aisle_passage_x, to_y))
+                waypoints.append((to_x, to_y))
+
+            # Draw the path segments
+            for j in range(len(waypoints) - 1):
+                x_coords = [waypoints[j][0], waypoints[j+1][0]]
+                y_coords = [waypoints[j][1], waypoints[j+1][1]]
+                self.ax.plot(x_coords, y_coords, color=route_color, linewidth=4, alpha=0.8, zorder=5)
 
     def _draw_passages(self) -> None:
         """Draw passage corridors where movement occurs."""
@@ -337,20 +452,9 @@ class RouteVisualizer:
 
         G = self.create_networkx_graph()
         pos = nx.get_node_attributes(G, 'pos')
-        
-        # Create route edges
-        route_edges = [(route[i], route[i+1]) for i in range(len(route)-1)]
-        
-        # Draw route path with thick colored edges
-        nx.draw_networkx_edges(
-            G, pos,
-            edgelist=route_edges,
-            edge_color=route_color,
-            width=4,
-            alpha=0.8,
-            arrows=False,
-            ax=self.ax
-        )
+
+        # Draw route path through passages
+        self._draw_route_through_passages(route, pos, route_color)
         
         # Highlight visited nodes
         visited_nodes = list(set(route))  # Remove duplicates

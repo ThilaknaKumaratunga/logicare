@@ -33,7 +33,7 @@ print(f"   ✓ {len(warehouse.nodes)} locations, {len(warehouse.edges)} paths\n"
 print("2. Creating order...")
 batch = Batch(id="ORDER_001", depot_id="DEPOT")
 batch.add_item(PickItem(sku="Snacks-ChipsA", location_id="A02-R-08", quantity=2, weight=0.5))
-# batch.add_item(PickItem(sku="Beverages-Juice", location_id="A04-03-00", quantity=3, weight=1.2))
+batch.add_item(PickItem(sku="Beverages-Juice", location_id="A03-L-04", quantity=3, weight=1.2))
 
 locations = [l for l in batch.get_required_locations() if l != 'DEPOT']
 print(f"   ✓ {batch.total_items()} items ({batch.total_weight():.1f}kg) from {len(locations)} locations")
