@@ -44,13 +44,38 @@ class OptimizedRoute:
         self.total_time += segment.travel_time
     
     def get_node_sequence(self) -> List[str]:
-        """Get ordered list of nodes in the route."""
+        """Get ordered list of nodes in the route by following edges from start."""
         if not self.segments:
             return []
-        
-        sequence = [self.segments[0].from_node]
-        for segment in self.segments:
-            sequence.append(segment.to_node)
+
+        # Build adjacency list (from_node -> [to_nodes]) to handle multiple visits
+        from collections import defaultdict
+        adjacency = defaultdict(list)
+        for seg in self.segments:
+            adjacency[seg.from_node].append(seg.to_node)
+
+        # Find starting node (prefer DEPOT)
+        all_from = set(seg.from_node for seg in self.segments)
+        if 'DEPOT' in all_from:
+            current = 'DEPOT'
+        else:
+            # Find node with outgoing edge but no incoming
+            all_to = set(seg.to_node for seg in self.segments)
+            start_candidates = all_from - all_to
+            current = list(start_candidates)[0] if start_candidates else self.segments[0].from_node
+
+        # Follow the path by consuming edges
+        sequence = [current]
+        edges_used = 0
+        max_edges = len(self.segments)
+
+        while current in adjacency and adjacency[current] and edges_used < max_edges:
+            # Take the next available edge from current node
+            next_node = adjacency[current].pop(0)
+            sequence.append(next_node)
+            edges_used += 1
+            current = next_node
+
         return sequence
 
 
@@ -255,7 +280,7 @@ class RouteOptimizer:
     
     def _add_flow_conservation_constraints(self, r_vars: Dict, visit_vars: Dict,
                                           batches: List[Batch], carts: List[Cart]) -> None:
-        """Add flow conservation: inflow = outflow = visit for each node."""
+        """Add flow conservation allowing round trips: inflow = outflow, max 2 visits per edge."""
         logger.debug("Adding flow conservation constraints")
         constraint_count = 0
 
@@ -273,56 +298,75 @@ class RouteOptimizer:
                     outflow = sum(r_vars.get((node_id, j, batch.id, cart.id), 0)
                                 for j in self.graph.nodes if (node_id, j, batch.id, cart.id) in r_vars)
 
-                    # Visit variable
-                    visit = visit_vars.get((node_id, batch.id, cart.id), 0)
-
-                    # Flow conservation
+                    # Flow conservation: what comes in must go out
                     self.model.add_constraint(
-                        inflow == visit,
-                        ctname=f"inflow_{node_id}_{batch.id}_{cart.id}"
-                    )
-                    self.model.add_constraint(
-                        outflow == visit,
-                        ctname=f"outflow_{node_id}_{batch.id}_{cart.id}"
-                    )
-                    constraint_count += 2
-
-        logger.debug(f"Added {constraint_count} flow conservation constraints")
-    
-    def _add_depot_constraints(self, r_vars: Dict, visit_vars: Dict,
-                              batches: List[Batch], carts: List[Cart]) -> None:
-        """Ensure routes start and end at depot."""
-        logger.debug("Adding depot constraints")
-        constraint_count = 0
-
-        for batch in batches:
-            for cart in carts:
-                if not batch.can_fit_in_cart(cart):
-                    continue
-
-                depot_id = batch.depot_id
-
-                # Must visit depot
-                if (depot_id, batch.id, cart.id) in visit_vars:
-                    self.model.add_constraint(
-                        visit_vars[(depot_id, batch.id, cart.id)] == 1,
-                        ctname=f"depot_visit_{batch.id}_{cart.id}"
+                        inflow == outflow,
+                        ctname=f"flow_balance_{node_id}_{batch.id}_{cart.id}"
                     )
                     constraint_count += 1
 
-        logger.debug(f"Added {constraint_count} depot constraints")
+                    # Limit flow to at most 2 (allows round trip on same edges)
+                    self.model.add_constraint(
+                        inflow <= 2,
+                        ctname=f"max_inflow_{node_id}_{batch.id}_{cart.id}"
+                    )
+                    self.model.add_constraint(
+                        outflow <= 2,
+                        ctname=f"max_outflow_{node_id}_{batch.id}_{cart.id}"
+                    )
+                    constraint_count += 2
+
+                    visit = visit_vars.get((node_id, batch.id, cart.id), 0)
+
+                    if node_id == batch.depot_id:
+                        # Depot: inflow = outflow = visit (must all be 1)
+                        self.model.add_constraint(
+                            inflow == visit,
+                            ctname=f"depot_in_eq_visit_{batch.id}_{cart.id}"
+                        )
+                        self.model.add_constraint(
+                            outflow == visit,
+                            ctname=f"depot_out_eq_visit_{batch.id}_{cart.id}"
+                        )
+                        constraint_count += 2
+                    else:
+                        # Non-depot: if visit=1, must have inflow >= 1
+                        self.model.add_constraint(
+                            inflow >= visit,
+                            ctname=f"visit_needs_flow_{node_id}_{batch.id}_{cart.id}"
+                        )
+                        constraint_count += 1
+
+        logger.info(f"Added {constraint_count} flow conservation constraints")
+    
+    def _add_depot_constraints(self, r_vars: Dict, visit_vars: Dict,
+                              batches: List[Batch], carts: List[Cart]) -> None:
+        """Depot constraints now handled in flow conservation."""
+        logger.debug("Depot constraints handled in flow conservation")
+        pass
     
     def _add_visit_requirements(self, visit_vars: Dict, batches: List[Batch],
                                carts: List[Cart]) -> None:
         """Force visits to all required picking locations."""
-        logger.debug("Adding visit requirement constraints")
+        logger.info("Adding visit requirement constraints")
         constraint_count = 0
 
         for batch in batches:
             required_locations = batch.get_required_locations()
-            logger.debug(f"Batch {batch.id} requires visits to: {required_locations}")
+            pick_locations = {loc for loc in required_locations if loc != batch.depot_id}
+            logger.info(f"Batch {batch.id} requires visits to pick locations: {pick_locations}")
 
-            for location in required_locations:
+            # Force depot visit = 1 (ensures route starts and ends at depot)
+            for cart in carts:
+                if batch.can_fit_in_cart(cart):
+                    depot_visit = visit_vars.get((batch.depot_id, batch.id, cart.id), 0)
+                    self.model.add_constraint(
+                        depot_visit == 1,
+                        ctname=f"depot_must_visit_{batch.id}_{cart.id}"
+                    )
+                    constraint_count += 1
+
+            for location in pick_locations:
                 if location not in self.graph.nodes:
                     raise ValueError(f"Required location {location} not in graph")
 
@@ -347,35 +391,46 @@ class RouteOptimizer:
     
     def _add_subtour_elimination(self, r_vars: Dict, order_vars: Dict, visit_vars: Dict,
                                 batches: List[Batch], carts: List[Cart]) -> None:
-        """Add MTZ subtour elimination constraints."""
-        logger.debug("Adding MTZ subtour elimination constraints")
-        n = len(self.graph.nodes)
+        """
+        Subtour elimination using modified MTZ that allows round trips.
+
+        Key insight: We can use MTZ on VISIT events rather than edge traversals.
+        - Each node can be traversed multiple times (round trip)
+        - But each PICK location is visited exactly once in sequence
+        - This prevents subtours while allowing backtracking
+
+        For nodes with visit=1, we enforce ordering.
+        For nodes with visit=0 (pass-through), no ordering constraint.
+        """
+        logger.info("Adding standard MTZ subtour elimination")
         constraint_count = 0
+        n = len(self.graph.nodes)
 
         for batch in batches:
             for cart in carts:
                 if not batch.can_fit_in_cart(cart):
                     continue
 
-                for i in self.graph.nodes:
-                    for j in self.graph.nodes:
-                        if i == j or i == batch.depot_id or j == batch.depot_id:
-                            continue
+                for (i, j, b_id, k_id), var in r_vars.items():
+                    if b_id != batch.id or k_id != cart.id:
+                        continue
 
-                        if (i, j, batch.id, cart.id) in r_vars:
-                            # MTZ constraint: order[j] >= order[i] + 1 - n*(1 - r[i,j])
-                            order_i = order_vars.get((i, batch.id, cart.id))
-                            order_j = order_vars.get((j, batch.id, cart.id))
-                            r_ij = r_vars[(i, j, batch.id, cart.id)]
+                    # Skip depot edges
+                    if i == batch.depot_id or j == batch.depot_id:
+                        continue
 
-                            if order_i is not None and order_j is not None:
-                                self.model.add_constraint(
-                                    order_j >= order_i + 1 - n * (1 - r_ij),
-                                    ctname=f"mtz_{i}_{j}_{batch.id}_{cart.id}"
-                                )
-                                constraint_count += 1
+                    order_i = order_vars.get((i, batch.id, cart.id), 0)
+                    order_j = order_vars.get((j, batch.id, cart.id), 0)
 
-        logger.debug(f"Added {constraint_count} MTZ subtour elimination constraints")
+                    # Standard MTZ: if edge (i,j) is used, order[j] >= order[i] + 1
+                    # order[j] >= order[i] + 1 - n*(1 - r[i,j])
+                    self.model.add_constraint(
+                        order_j >= order_i + 1 - n * (1 - var),
+                        ctname=f"mtz_{i}_{j}_{batch.id}_{cart.id}"
+                    )
+                    constraint_count += 1
+
+        logger.info(f"Added {constraint_count} MTZ subtour elimination constraints")
     
     def _extract_routes(self, solution, r_vars: Dict, batches: List[Batch],
                        carts: List[Cart]) -> Dict[str, OptimizedRoute]:

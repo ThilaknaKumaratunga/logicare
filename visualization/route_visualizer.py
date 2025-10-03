@@ -7,6 +7,7 @@ Provides 2D visualization for POC and debugging.
 
 import logging
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import networkx as nx
 from typing import Dict, List, Tuple, Optional
 import numpy as np
@@ -68,13 +69,69 @@ class RouteVisualizer:
         
         return G
     
-    def plot_layout(self, 
+    def _draw_aisle_rectangles(self, ax, pos, node_types):
+        """Draw rectangular aisles as connected blocks."""
+        # Draw depot rectangle first
+        for node_id, (x, y) in pos.items():
+            if node_types.get(node_id) == 'depot':
+                depot_rect = mpatches.Rectangle(
+                    (x - 0.5, y - 0.5),
+                    1.0,
+                    1.0,
+                    linewidth=3,
+                    edgecolor='darkred',
+                    facecolor='lightcoral',
+                    alpha=0.3,
+                    zorder=0
+                )
+                ax.add_patch(depot_rect)
+
+        # Group nodes by aisle
+        aisles = {}
+        for node_id, (x, y) in pos.items():
+            node_type = node_types.get(node_id, 'location')
+            if node_type == 'depot':
+                continue
+
+            # Extract aisle from node ID (format: A01-01-00)
+            parts = node_id.split('-')
+            if len(parts) >= 1:
+                aisle = parts[0]
+                if aisle not in aisles:
+                    aisles[aisle] = []
+                aisles[aisle].append((node_id, x, y))
+
+        # Draw each aisle as one connected rectangle
+        for aisle, nodes in aisles.items():
+            if not nodes:
+                continue
+
+            xs = [x for _, x, y in nodes]
+            ys = [y for _, x, y in nodes]
+
+            min_x, max_x = min(xs), max(xs)
+            min_y, max_y = min(ys), max(ys)
+
+            # Single connected aisle block
+            aisle_rect = mpatches.Rectangle(
+                (min_x - 0.35, min_y - 0.35),
+                max_x - min_x + 0.7,
+                max_y - min_y + 0.7,
+                linewidth=2,
+                edgecolor='darkgray',
+                facecolor='lightgray',
+                alpha=0.6,
+                zorder=1
+            )
+            ax.add_patch(aisle_rect)
+
+    def plot_layout(self,
                    figsize: Tuple[int, int] = (12, 10),
                    show_edge_labels: bool = True,
                    title: str = "Warehouse Layout") -> None:
         """
         Plot the basic warehouse layout without routes.
-        
+
         Args:
             figsize: Figure size (width, height)
             show_edge_labels: Whether to show travel times on edges
@@ -83,9 +140,12 @@ class RouteVisualizer:
         G = self.create_networkx_graph()
         pos = nx.get_node_attributes(G, 'pos')
         node_types = nx.get_node_attributes(G, 'node_type')
-        
+
         self.fig, self.ax = plt.subplots(figsize=figsize)
-        
+
+        # Draw aisle and block rectangles first
+        self._draw_aisle_rectangles(self.ax, pos, node_types)
+
         # Separate depot from other nodes
         depot_nodes = [n for n, t in node_types.items() if t == 'depot']
         location_nodes = [n for n, t in node_types.items() if t != 'depot']
@@ -169,7 +229,8 @@ class RouteVisualizer:
                   route_color: str = 'blue',
                   figsize: Tuple[int, int] = (12, 10),
                   show_sequence: bool = True,
-                  cart_info: Optional[Dict] = None) -> None:
+                  cart_info: Optional[Dict] = None,
+                  pick_locations: Optional[List[str]] = None) -> None:
         """
         Plot a single optimized route on the warehouse layout.
 
@@ -181,6 +242,7 @@ class RouteVisualizer:
             figsize: Figure size (width, height)
             show_sequence: Whether to show sequence numbers on nodes
             cart_info: Optional dict with cart details (capacity, items, weight)
+            pick_locations: Optional list of locations where items are picked (highlighted in red)
         """
         # First plot the base layout
         self.plot_layout(figsize=figsize, show_edge_labels=True,
@@ -208,14 +270,43 @@ class RouteVisualizer:
         
         # Highlight visited nodes
         visited_nodes = list(set(route))  # Remove duplicates
-        nx.draw_networkx_nodes(
-            G, pos,
-            nodelist=visited_nodes,
-            node_color=route_color,
-            node_size=600,
-            alpha=0.7,
-            ax=self.ax
-        )
+
+        # Separate pick locations from regular visited nodes
+        if pick_locations:
+            pick_nodes = [n for n in visited_nodes if n in pick_locations]
+            regular_nodes = [n for n in visited_nodes if n not in pick_locations]
+
+            # Draw pick locations in red
+            if pick_nodes:
+                nx.draw_networkx_nodes(
+                    G, pos,
+                    nodelist=pick_nodes,
+                    node_color='red',
+                    node_size=700,
+                    alpha=0.9,
+                    ax=self.ax
+                )
+
+            # Draw regular visited nodes in blue
+            if regular_nodes:
+                nx.draw_networkx_nodes(
+                    G, pos,
+                    nodelist=regular_nodes,
+                    node_color=route_color,
+                    node_size=600,
+                    alpha=0.7,
+                    ax=self.ax
+                )
+        else:
+            # No pick locations specified, draw all in blue
+            nx.draw_networkx_nodes(
+                G, pos,
+                nodelist=visited_nodes,
+                node_color=route_color,
+                node_size=600,
+                alpha=0.7,
+                ax=self.ax
+            )
         
         # Add sequence numbers if requested
         if show_sequence:

@@ -26,16 +26,18 @@ print("="*60 + "\n")
 
 # 1. Load warehouse
 print("1. Loading warehouse...")
-warehouse = LayoutImporter().load_from_json('data/small_warehouse.json')
+warehouse = LayoutImporter().load_from_json('data/test_warehouse_small.json')
 print(f"   ✓ {len(warehouse.nodes)} locations, {len(warehouse.edges)} paths\n")
 
 # 2. Create order
 print("2. Creating order...")
 batch = Batch(id="ORDER_001", depot_id="DEPOT")
-batch.add_item(PickItem(sku="WIDGET", location_id="A1", quantity=2))
-batch.add_item(PickItem(sku="GADGET", location_id="B2", quantity=1))
-batch.add_item(PickItem(sku="THING", location_id="C1", quantity=3))
-print(f"   ✓ {batch.total_items()} items from {', '.join([l for l in batch.get_required_locations() if l!='DEPOT'])}\n")
+batch.add_item(PickItem(sku="Snacks-ChipsA", location_id="A03-05-00", quantity=2, weight=0.5))
+# batch.add_item(PickItem(sku="Beverages-Juice", location_id="A04-03-00", quantity=3, weight=1.2))
+
+locations = [l for l in batch.get_required_locations() if l != 'DEPOT']
+print(f"   ✓ {batch.total_items()} items ({batch.total_weight():.1f}kg) from {len(locations)} locations")
+print(f"   ✓ Locations: {', '.join(locations)}\n")
 
 # 3. Assign cart
 print("3. Assigning cart...")
@@ -64,8 +66,10 @@ if routes:
         'weight': batch.total_weight()
     }
 
+    pick_locations = [item.location_id for item in batch.items]
+
     viz = RouteVisualizer(warehouse)
-    viz.plot_route(route.get_node_sequence(), batch.id, cart.id, cart_info=cart_info)
+    viz.plot_route(route.get_node_sequence(), batch.id, cart.id, cart_info=cart_info, pick_locations=pick_locations)
     viz.save_plot("output/route.png")
     print(f"   ✓ Saved: output/route.png\n")
 

@@ -86,9 +86,15 @@ class JSONLayoutImporter(CADAdapterInterface):
         """Import warehouse layout from JSON file."""
         with open(file_path, 'r') as f:
             data = json.load(f)
-        
+
         graph = WarehouseGraph()
-        
+
+        # Check which format is being used
+        if 'warehouse' in data:
+            # Format 2: Aisle-based warehouse
+            return self._import_aisle_based_layout(data['warehouse'])
+
+        # Format 1: Direct nodes/edges
         # Import nodes
         for node_data in data.get('nodes', []):
             # Get node_type from metadata['type'] or direct field
@@ -125,8 +131,146 @@ class JSONLayoutImporter(CADAdapterInterface):
         
         # Build adjacency lists
         graph.build_adjacency_lists()
-        
+
         return graph
+
+    def _import_aisle_based_layout(self, warehouse_data: dict) -> WarehouseGraph:
+        """Import warehouse layout from aisle-based format."""
+        graph = WarehouseGraph()
+
+        start = warehouse_data.get('start', {'x': 0, 'y': 0, 'z': 0})
+
+        # Add depot/start node
+        depot_node = Node(
+            id='DEPOT',
+            x=start['x'],
+            y=start['y'],
+            z=start.get('z', 0),
+            node_type='depot',
+            metadata={'start': True}
+        )
+        graph.add_node(depot_node)
+
+        # Track all cells for edge creation
+        all_cells = []
+
+        # Import locations from aisles
+        for location_group in warehouse_data.get('locations', []):
+            aisle_id = location_group.get('aisle', 'UNKNOWN')
+
+            for cell in location_group.get('cells', []):
+                cell_id = cell.get('id', f"{aisle_id}-{cell['x']}-{cell['y']}")
+
+                node = Node(
+                    id=cell_id,
+                    x=cell['x'],
+                    y=cell['y'],
+                    z=cell.get('z', 0),
+                    node_type='product',
+                    metadata={'aisle': aisle_id}
+                )
+                graph.add_node(node)
+                all_cells.append(node)
+
+        # Auto-generate edges based on proximity
+        self._generate_edges_from_cells(graph, depot_node, all_cells)
+
+        # Build adjacency lists
+        graph.build_adjacency_lists()
+
+        return graph
+
+    def _generate_edges_from_cells(self, graph: WarehouseGraph, depot: Node, cells: list) -> None:
+        """Generate edges for warehouse with passages."""
+        if not cells:
+            return
+
+        def manhattan_distance(n1: Node, n2: Node) -> float:
+            return abs(n1.x - n2.x) + abs(n1.y - n2.y)
+
+        # Group cells by aisle
+        aisles = {}
+        for cell in cells:
+            aisle = cell.metadata.get('aisle', 'UNKNOWN')
+            if aisle not in aisles:
+                aisles[aisle] = []
+            aisles[aisle].append(cell)
+
+        # Sort cells within each aisle by y-coordinate
+        for aisle in aisles:
+            aisles[aisle].sort(key=lambda c: c.y)
+
+        # 1. Connect depot to bottom of each aisle
+        for aisle, aisle_cells in aisles.items():
+            if aisle_cells:
+                bottom_cell = aisle_cells[0]
+                distance = manhattan_distance(depot, bottom_cell)
+                edge = Edge(
+                    from_node=depot.id,
+                    to_node=bottom_cell.id,
+                    travel_time=distance,
+                    distance=distance,
+                    bidirectional=True,
+                    direction_allowed='both',
+                    metadata={'type': 'depot_to_aisle', 'aisle': aisle}
+                )
+                graph.add_edge(edge)
+
+        # 2. Connect blocks within same aisle (vertical movement)
+        for aisle, aisle_cells in aisles.items():
+            for i in range(len(aisle_cells) - 1):
+                cell1 = aisle_cells[i]
+                cell2 = aisle_cells[i + 1]
+
+                if cell1.x == cell2.x:
+                    distance = abs(cell2.y - cell1.y)
+                    edge = Edge(
+                        from_node=cell1.id,
+                        to_node=cell2.id,
+                        travel_time=distance,
+                        distance=distance,
+                        bidirectional=True,
+                        direction_allowed='both',
+                        metadata={'type': 'within_aisle', 'aisle': aisle}
+                    )
+                    graph.add_edge(edge)
+
+        # 3. Connect adjacent aisles at bottom and top
+        aisle_list = sorted(aisles.items(), key=lambda x: x[1][0].x if x[1] else 0)
+        for i in range(len(aisle_list) - 1):
+            aisle1_name, aisle1_cells = aisle_list[i]
+            aisle2_name, aisle2_cells = aisle_list[i + 1]
+
+            if aisle1_cells and aisle2_cells:
+                # Bottom
+                bottom1 = aisle1_cells[0]
+                bottom2 = aisle2_cells[0]
+                distance = manhattan_distance(bottom1, bottom2)
+                edge = Edge(
+                    from_node=bottom1.id,
+                    to_node=bottom2.id,
+                    travel_time=distance,
+                    distance=distance,
+                    bidirectional=True,
+                    direction_allowed='both',
+                    metadata={'type': 'cross_aisle', 'location': 'bottom'}
+                )
+                graph.add_edge(edge)
+
+                # Top
+                top1 = aisle1_cells[-1]
+                top2 = aisle2_cells[-1]
+                distance = manhattan_distance(top1, top2)
+                edge = Edge(
+                    from_node=top1.id,
+                    to_node=top2.id,
+                    travel_time=distance,
+                    distance=distance,
+                    bidirectional=True,
+                    direction_allowed='both',
+                    metadata={'type': 'cross_aisle', 'location': 'top'}
+                )
+                graph.add_edge(edge)
 
 
 class CSVLayoutImporter(CADAdapterInterface):
