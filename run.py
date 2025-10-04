@@ -40,7 +40,7 @@ random.seed(42)  # For reproducibility
 for i in range(1, 101):
     aisle = random.randint(1, 100)
     side = random.choice(['L', 'R'])
-    shelf = random.randint(0, 4)
+    shelf = random.randint(1, 4)
     location_id = f"A{aisle:02d}-{side}-{shelf:02d}"
 
     batch.add_item(PickItem(
@@ -61,7 +61,7 @@ print(f"   ✓ {cart.id} (capacity: {cart.capacity}, weight capacity: {cart.weig
 
 # 4. Optimize
 print("4. Finding optimal route...")
-optimizer = RouteOptimizer(warehouse, time_limit=30)
+optimizer = RouteOptimizer(warehouse, time_limit=300)
 routes = optimizer.optimize([batch], [cart])
 
 if routes:
