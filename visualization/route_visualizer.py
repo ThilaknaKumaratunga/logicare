@@ -206,11 +206,11 @@ class RouteVisualizer:
                     waypoints.append((aisle_passage_x, to_y))
                 waypoints.append((to_x, to_y))
 
-            # Draw the path segments
+            # Draw the path segments without arrows
             for j in range(len(waypoints) - 1):
                 x_coords = [waypoints[j][0], waypoints[j+1][0]]
                 y_coords = [waypoints[j][1], waypoints[j+1][1]]
-                self.ax.plot(x_coords, y_coords, color=route_color, linewidth=4, alpha=0.8, zorder=5)
+                self.ax.plot(x_coords, y_coords, color=route_color, linewidth=3, alpha=0.9, zorder=5)
 
     def _draw_passage_based_route(self, route: List[str], pos: dict, route_color: str) -> None:
         """Draw route path through passage centerlines for block-based warehouses."""
@@ -267,11 +267,11 @@ class RouteVisualizer:
             if waypoints[-1] != (to_x, to_y):
                 waypoints.append((to_x, to_y))
 
-            # Draw the path segments
+            # Draw the path segments without arrows
             for j in range(len(waypoints) - 1):
                 x_coords = [waypoints[j][0], waypoints[j+1][0]]
                 y_coords = [waypoints[j][1], waypoints[j+1][1]]
-                self.ax.plot(x_coords, y_coords, color=route_color, linewidth=4, alpha=0.8, zorder=5)
+                self.ax.plot(x_coords, y_coords, color=route_color, linewidth=3, alpha=0.9, zorder=5)
 
     def _get_passage_centerlines(self):
         """Extract passage centerlines from graph metadata or infer from structure."""
@@ -475,8 +475,8 @@ class RouteVisualizer:
 
         self.fig, self.ax = plt.subplots(figsize=figsize)
 
-        # Draw aisle and block rectangles first
-        self._draw_aisle_rectangles(self.ax, pos, node_types)
+        # Don't draw old-style aisle rectangles - we use block bounding boxes instead
+        # self._draw_aisle_rectangles(self.ax, pos, node_types)
 
         # Separate depot from other nodes
         depot_nodes = [n for n, t in node_types.items() if t == 'depot']
@@ -504,43 +504,13 @@ class RouteVisualizer:
         #     ax=self.ax
         # )
         
-        # Draw edges
-        # Separate bidirectional and unidirectional edges
-        bidirectional_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get('bidirectional', False)]
-        unidirectional_edges = [(u, v) for u, v, d in G.edges(data=True) if not d.get('bidirectional', False)]
+        # Don't draw edges in base layout (too cluttered)
+        # Edges will only be visible in the route path
 
-        # Draw bidirectional edges with arrows in both directions (<-->)
-        nx.draw_networkx_edges(
-            G, pos,
-            edgelist=bidirectional_edges,
-            edge_color='gray',
-            style='solid',
-            alpha=0.6,
-            arrows=True,
-            arrowsize=20,
-            arrowstyle='<->',  # ← Two arrow heads (bidirectional)
-            width=1.5,
-            connectionstyle='arc3,rad=0.0',
-            ax=self.ax
-        )
-
-        # Draw unidirectional edges with single arrow (-->)
-        nx.draw_networkx_edges(
-            G, pos,
-            edgelist=unidirectional_edges,
-            edge_color='gray',
-            style='solid',
-            alpha=0.6,
-            arrows=True,
-            arrowsize=20,
-            arrowstyle='->',  # ← Single arrow head (unidirectional)
-            width=2,
-            connectionstyle='arc3,rad=0.0',
-            ax=self.ax
-        )
-        
-        # Draw labels
-        nx.draw_networkx_labels(G, pos, font_size=10, font_weight='bold', ax=self.ax)
+        # Don't draw labels here - they're already drawn in block bounding boxes
+        # Only draw depot label
+        depot_labels = {n: n for n in depot_nodes}
+        nx.draw_networkx_labels(G, pos, labels=depot_labels, font_size=10, font_weight='bold', ax=self.ax)
         
         # Draw edge labels (travel times)
         if show_edge_labels:
