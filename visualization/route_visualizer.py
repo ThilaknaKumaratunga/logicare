@@ -85,13 +85,13 @@ class RouteVisualizer:
             return (x, y)
 
         # Offset storage blocks at passage y-levels
-        passage_levels = [1, 12]
+        passage_levels = [1, 20]
         if y in passage_levels:
             # Shift blocks slightly away from passage corridor
-            # Blocks at y=1 shift to y=1.3, blocks at y=12 shift to y=11.7
+            # Blocks at y=1 shift to y=1.3, blocks at y=20 shift to y=19.7
             if y == 1:
                 visual_y = y + 0.3
-            elif y == 12:
+            elif y == 20:
                 visual_y = y - 0.3
             else:
                 visual_y = y
@@ -110,8 +110,9 @@ class RouteVisualizer:
             return
 
         # Passage coordinates (vertical aisles and horizontal passages)
-        vertical_passages = [1, 4, 7]  # x-coordinates of vertical aisle passages
-        horizontal_passages = [1, 12]  # y-coordinates of horizontal cross-aisle passages
+        # Updated for 10 aisles: passages at x=1,4,7,10,13,16,19,22,25,28
+        vertical_passages = [1, 4, 7, 10, 13, 16, 19, 22, 25, 28]  # x-coordinates of vertical aisle passages
+        horizontal_passages = [1, 20]  # y-coordinates of horizontal cross-aisle passages
 
         for i in range(len(route) - 1):
             from_node = route[i]
@@ -141,15 +142,29 @@ class RouteVisualizer:
             waypoints = [(from_x, from_y)]
 
             # Determine which vertical passage to use based on x-coordinate
-            # A01 (x=0,2) uses passage at x=1
-            # A02 (x=3,5) uses passage at x=4
-            # A03 (x=6,8) uses passage at x=7
+            # A01 (x=0,2) uses x=1, A02 (x=3,5) uses x=4, A03 (x=6,8) uses x=7
+            # A04 (x=9,11) uses x=10, A05 (x=12,14) uses x=13, A06 (x=15,17) uses x=16
+            # A07 (x=18,20) uses x=19, A08 (x=21,23) uses x=22, A09 (x=24,26) uses x=25, A10 (x=27,29) uses x=28
             if from_x <= 2:
                 aisle_passage_x = 1
             elif from_x <= 5:
                 aisle_passage_x = 4
-            else:
+            elif from_x <= 8:
                 aisle_passage_x = 7
+            elif from_x <= 11:
+                aisle_passage_x = 10
+            elif from_x <= 14:
+                aisle_passage_x = 13
+            elif from_x <= 17:
+                aisle_passage_x = 16
+            elif from_x <= 20:
+                aisle_passage_x = 19
+            elif from_x <= 23:
+                aisle_passage_x = 22
+            elif from_x <= 26:
+                aisle_passage_x = 25
+            else:
+                aisle_passage_x = 28
 
             if edge_type == 'depot_to_passage':
                 # Movement from depot to passage nodes
@@ -166,13 +181,34 @@ class RouteVisualizer:
                     target_aisle_passage_x = 1
                 elif to_x <= 5:
                     target_aisle_passage_x = 4
-                else:
+                elif to_x <= 8:
                     target_aisle_passage_x = 7
+                elif to_x <= 11:
+                    target_aisle_passage_x = 10
+                elif to_x <= 14:
+                    target_aisle_passage_x = 13
+                elif to_x <= 17:
+                    target_aisle_passage_x = 16
+                elif to_x <= 20:
+                    target_aisle_passage_x = 19
+                elif to_x <= 23:
+                    target_aisle_passage_x = 22
+                elif to_x <= 26:
+                    target_aisle_passage_x = 25
+                else:
+                    target_aisle_passage_x = 28
 
                 # Check if from and to are in same aisle
                 same_aisle = (from_x <= 2 and to_x <= 2) or \
                             (3 <= from_x <= 5 and 3 <= to_x <= 5) or \
-                            (6 <= from_x and 6 <= to_x)
+                            (6 <= from_x <= 8 and 6 <= to_x <= 8) or \
+                            (9 <= from_x <= 11 and 9 <= to_x <= 11) or \
+                            (12 <= from_x <= 14 and 12 <= to_x <= 14) or \
+                            (15 <= from_x <= 17 and 15 <= to_x <= 17) or \
+                            (18 <= from_x <= 20 and 18 <= to_x <= 20) or \
+                            (21 <= from_x <= 23 and 21 <= to_x <= 23) or \
+                            (24 <= from_x <= 26 and 24 <= to_x <= 26) or \
+                            (27 <= from_x and 27 <= to_x)
 
                 if same_aisle and from_x != to_x:
                     # Within same aisle but different sides (L to R or R to L)
@@ -210,7 +246,7 @@ class RouteVisualizer:
             for j in range(len(waypoints) - 1):
                 x_coords = [waypoints[j][0], waypoints[j+1][0]]
                 y_coords = [waypoints[j][1], waypoints[j+1][1]]
-                self.ax.plot(x_coords, y_coords, color=route_color, linewidth=4, alpha=0.8, zorder=5)
+                self.ax.plot(x_coords, y_coords, color=route_color, linewidth=6, alpha=0.8, zorder=5)
 
     def _draw_passages(self) -> None:
         """Draw passage corridors where movement occurs."""
@@ -225,9 +261,9 @@ class RouteVisualizer:
         all_y = [n.y for n in all_nodes]
         min_y, max_y = min(all_y), max(all_y)
 
-        # Draw vertical aisle corridors at x=1, x=4, x=7
+        # Draw vertical aisle corridors for all 10 aisles
         # These are the passages between L and R sides
-        aisle_passages = [1, 4, 7]
+        aisle_passages = [1, 4, 7, 10, 13, 16, 19, 22, 25, 28]
         for passage_x in aisle_passages:
             aisle_rect = mpatches.Rectangle(
                 (passage_x - 0.3, min_y - 0.5),
@@ -325,7 +361,7 @@ class RouteVisualizer:
             ax.add_patch(aisle_rect)
 
     def plot_layout(self,
-                   figsize: Tuple[int, int] = (12, 10),
+                   figsize: Tuple[int, int] = (32, 20),
                    show_edge_labels: bool = True,
                    title: str = "Warehouse Layout") -> None:
         """
@@ -351,10 +387,10 @@ class RouteVisualizer:
         
         # Draw nodes
         nx.draw_networkx_nodes(
-            G, pos, 
+            G, pos,
             nodelist=depot_nodes,
             node_color='red',
-            node_size=800,
+            node_size=1200,
             node_shape='s',  # square for depot
             label='Depot',
             ax=self.ax
@@ -406,18 +442,18 @@ class RouteVisualizer:
             ax=self.ax
         )
         
-        # Draw labels
-        nx.draw_networkx_labels(G, pos, font_size=10, font_weight='bold', ax=self.ax)
+        # Draw labels - smaller to reduce overlap
+        nx.draw_networkx_labels(G, pos, font_size=10, font_weight='normal', ax=self.ax)
         
         # Draw edge labels (travel times)
         if show_edge_labels:
             edge_labels = nx.get_edge_attributes(G, 'weight')
             # Format labels to 1 decimal place
             edge_labels = {k: f"{v:.1f}" for k, v in edge_labels.items()}
-            nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=8, ax=self.ax)
+            nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=12, ax=self.ax)
         
-        self.ax.set_title(title, fontsize=16, fontweight='bold')
-        self.ax.legend()
+        self.ax.set_title(title, fontsize=22, fontweight='bold')
+        self.ax.legend(fontsize=14)
         self.ax.grid(True, alpha=0.3)
         self.ax.set_aspect('equal')
         plt.tight_layout()
@@ -427,7 +463,7 @@ class RouteVisualizer:
                   batch_id: str = "1",
                   cart_id: str = "1",
                   route_color: str = 'blue',
-                  figsize: Tuple[int, int] = (12, 10),
+                  figsize: Tuple[int, int] = (32, 20),
                   show_sequence: bool = True,
                   cart_info: Optional[Dict] = None,
                   pick_locations: Optional[List[str]] = None) -> None:
@@ -471,7 +507,7 @@ class RouteVisualizer:
                     G, pos,
                     nodelist=pick_nodes,
                     node_color='red',
-                    node_size=700,
+                    node_size=1000,
                     alpha=0.9,
                     ax=self.ax
                 )
@@ -482,7 +518,7 @@ class RouteVisualizer:
                     G, pos,
                     nodelist=regular_nodes,
                     node_color=route_color,
-                    node_size=600,
+                    node_size=900,
                     alpha=0.7,
                     ax=self.ax
                 )
@@ -492,7 +528,7 @@ class RouteVisualizer:
                 G, pos,
                 nodelist=visited_nodes,
                 node_color=route_color,
-                node_size=600,
+                node_size=900,
                 alpha=0.7,
                 ax=self.ax
             )
@@ -500,14 +536,15 @@ class RouteVisualizer:
         # Add sequence numbers if requested
         if show_sequence:
             sequence_labels = {route[i]: f"{i}" for i in range(len(route))}
-            # Offset position slightly for sequence numbers
-            offset_pos = {node: (x, y-0.3) for node, (x, y) in pos.items() if node in sequence_labels}
+            # Offset position more significantly for sequence numbers to avoid overlap
+            offset_pos = {node: (x, y-1.2) for node, (x, y) in pos.items() if node in sequence_labels}
             nx.draw_networkx_labels(
                 G, offset_pos,
                 labels=sequence_labels,
-                font_size=8,
+                font_size=14,
                 font_color='white',
-                bbox=dict(boxstyle='circle', facecolor=route_color, alpha=0.8),
+                font_weight='bold',
+                bbox=dict(boxstyle='circle,pad=0.4', facecolor=route_color, alpha=0.95, edgecolor='white', linewidth=2),
                 ax=self.ax
             )
         
@@ -530,13 +567,13 @@ class RouteVisualizer:
         stats_text = "\n".join(stats_lines)
         self.ax.text(0.02, 0.98, stats_text,
                     transform=self.ax.transAxes,
-                    fontsize=9,
+                    fontsize=14,
                     verticalalignment='top',
                     bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9))
     
     def plot_multiple_routes(self,
                            routes: Dict[Tuple[str, str], List[str]],
-                           figsize: Tuple[int, int] = (14, 12),
+                           figsize: Tuple[int, int] = (36, 24),
                            colors: Optional[List[str]] = None) -> None:
         """
         Plot multiple routes on the same layout (for multiple batches/carts).
