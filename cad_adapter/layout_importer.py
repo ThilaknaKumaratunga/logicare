@@ -92,6 +92,9 @@ class JSONLayoutImporter(CADAdapterInterface):
         # Check which format is being used
         if 'warehouse' in data:
             warehouse_data = data['warehouse']
+            # Check if it's block-based layout (has 'aisles' with block centers)
+            if warehouse_data.get('aisles') and warehouse_data.get('passages'):
+                return self._import_block_based_layout(warehouse_data)
             # Check if it's double-sided layout (has 'sides' in locations)
             if warehouse_data.get('locations') and isinstance(warehouse_data['locations'][0].get('sides'), dict):
                 return self._import_double_sided_layout(warehouse_data)
@@ -137,6 +140,142 @@ class JSONLayoutImporter(CADAdapterInterface):
         graph.build_adjacency_lists()
 
         return graph
+
+    def _import_block_based_layout(self, warehouse_data: dict) -> WarehouseGraph:
+        """
+        Import warehouse layout with block-based design and passage centerline routing.
+
+        Blocks are 4×4 units with centers as node positions.
+        All routing goes through passage centerlines (middle of 2-unit passages).
+        """
+        graph = WarehouseGraph()
+
+        # Add depot node
+        depot_data = warehouse_data.get('depot', {'x': 2, 'y': 1, 'id': 'DEPOT'})
+        depot_node = Node(
+            id=depot_data.get('id', 'DEPOT'),
+            x=depot_data['x'],
+            y=depot_data['y'],
+            z=depot_data.get('z', 0),
+            node_type='depot',
+            metadata={'start': True}
+        )
+        graph.add_node(depot_node)
+
+        # Add all block nodes (at block centers)
+        for aisle in warehouse_data.get('aisles', []):
+            aisle_id = aisle.get('id')
+            for side_name, side_data in aisle.get('sides', {}).items():
+                for block in side_data.get('blocks', []):
+                    node = Node(
+                        id=block['id'],
+                        x=block['x'],
+                        y=block['y'],
+                        z=0,
+                        node_type='product',
+                        metadata={'aisle': aisle_id, 'side': side_name}
+                    )
+                    graph.add_node(node)
+
+        # Generate passage-based routing edges
+        self._generate_passage_routing_edges(graph, warehouse_data)
+
+        # Build adjacency lists
+        graph.build_adjacency_lists()
+
+        return graph
+
+    def _generate_passage_routing_edges(self, graph: WarehouseGraph, warehouse_data: dict) -> None:
+        """
+        Generate edges for passage-based routing.
+
+        Routing logic:
+        1. Block center → nearest vertical passage centerline (horizontal movement)
+        2. Vertical passage centerline → horizontal passage centerline (vertical movement)
+        3. Horizontal passage centerlines connect across aisles
+        4. Depot connects to bottom horizontal passage
+        """
+
+        def manhattan_distance(x1, y1, x2, y2):
+            return abs(x2 - x1) + abs(y2 - y1)
+
+        def add_edge(from_id, to_id, distance, edge_type='passage'):
+            edge = Edge(
+                from_node=from_id,
+                to_node=to_id,
+                travel_time=distance,
+                distance=distance,
+                bidirectional=True,
+                direction_allowed='both',
+                metadata={'type': edge_type}
+            )
+            graph.add_edge(edge)
+
+        # Get passage data
+        h_passages = warehouse_data.get('passages', {}).get('horizontal', [])
+        v_passages = warehouse_data.get('passages', {}).get('vertical', [])
+
+        # Extract passage centerlines
+        h_passage_y = [p['y'] for p in h_passages]  # y-coordinates of horizontal passages
+        v_passage_x = [p['x'] for p in v_passages]  # x-coordinates of vertical passages
+
+        depot = graph.nodes['DEPOT']
+
+        # 1. Connect depot to bottom horizontal passage
+        # Depot is at (2,1), bottom passage is at y=1
+        # Find closest vertical passage on the bottom horizontal passage
+        closest_vp_x = min(v_passage_x, key=lambda x: abs(x - depot.x))
+        # Distance from depot to intersection of closest VP and bottom HP
+        dist_to_passage = abs(closest_vp_x - depot.x)
+
+        # For now, connect depot directly to all blocks on bottom passage
+        # (We'll create passage intersection nodes in a more sophisticated version)
+
+        # 2. Connect each block to other blocks via passages
+        # To avoid duplicates, only create edge if node_id < other_id (lexicographically)
+        nodes_list = [(nid, n) for nid, n in graph.nodes.items() if n.node_type == 'product']
+
+        for i, (node_id, node) in enumerate(nodes_list):
+            nearest_vp_x = min(v_passage_x, key=lambda x: abs(x - node.x))
+
+            # Only connect to nodes that come after this one (avoid duplicates)
+            for j in range(i + 1, len(nodes_list)):
+                other_id, other_node = nodes_list[j]
+
+                other_nearest_vp = min(v_passage_x, key=lambda x: abs(x - other_node.x))
+
+                # Calculate passage-based distance via bottom passage
+                # node → VP1 (horizontal) → HP (along horizontal) → VP2 (along horizontal) → other (horizontal)
+                hp_y = h_passage_y[0]  # Use bottom passage
+
+                dist1 = abs(node.x - nearest_vp_x) + abs(node.y - hp_y)  # node to VP1-HP intersection
+                dist2 = abs(nearest_vp_x - other_nearest_vp)  # along horizontal passage
+                dist3 = abs(other_node.x - other_nearest_vp) + abs(other_node.y - hp_y)  # VP2-HP to other node
+
+                total = dist1 + dist2 + dist3
+                add_edge(node_id, other_id, total, 'via_passage')
+
+        # 3. Connect depot to all blocks via bottom passage
+        bottom_passage_y = h_passage_y[0]
+        for node_id, node in graph.nodes.items():
+            if node.node_type != 'product':
+                continue
+
+            # Find nearest VP to block
+            nearest_vp = min(v_passage_x, key=lambda x: abs(x - node.x))
+
+            # Find nearest VP to depot
+            depot_nearest_vp = min(v_passage_x, key=lambda x: abs(x - depot.x))
+
+            # Distance: depot → VP → HP → VP → block
+            depot_to_vp = abs(depot.x - depot_nearest_vp)
+            depot_to_hp = abs(depot.y - bottom_passage_y)
+            hp_distance = abs(depot_nearest_vp - nearest_vp)
+            hp_to_block_vp = abs(node.x - nearest_vp)
+            block_vp_to_block = abs(node.y - bottom_passage_y)
+
+            total_dist = depot_to_vp + depot_to_hp + hp_distance + hp_to_block_vp + block_vp_to_block
+            add_edge(depot.id, node_id, total_dist, 'depot_to_block')
 
     def _import_aisle_based_layout(self, warehouse_data: dict) -> WarehouseGraph:
         """Import warehouse layout from aisle-based format."""

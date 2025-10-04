@@ -1,0 +1,153 @@
+{
+  "warehouse": {
+    "name": "Block-Based Warehouse with Passages",
+    "description": "3 double-sided aisles with 4×4 blocks, 2-unit passages, passage-based routing",
+    "block_size": {
+      "width": 4,
+      "height": 4,
+      "description": "Each storage block is 4×4 units"
+    },
+    "passage_width": 2,
+    "depot": {
+      "x": 2,
+      "y": 1,
+      "width": 4,
+      "height": 2,
+      "id": "DEPOT",
+      "description": "Depot at (0,0)-(4,2), center at (2,1)"
+    },
+    "passages": {
+      "horizontal": [
+        {"y": 1, "x_start": 4, "x_end": 38, "description": "Bottom passage, centerline y=1"},
+        {"y": 50, "x_start": 0, "x_end": 38, "description": "Top passage, centerline y=50"}
+      ],
+      "vertical": [
+        {"x": 1, "y_start": 0, "y_end": 52, "description": "VP at x=0-2, centerline x=1"},
+        {"x": 7, "y_start": 2, "y_end": 50, "description": "VP at x=6-8, centerline x=7"},
+        {"x": 13, "y_start": 2, "y_end": 50, "description": "VP at x=12-14, centerline x=13"},
+        {"x": 19, "y_start": 2, "y_end": 50, "description": "VP at x=18-20, centerline x=19"},
+        {"x": 25, "y_start": 2, "y_end": 50, "description": "VP at x=24-26, centerline x=25"},
+        {"x": 31, "y_start": 2, "y_end": 50, "description": "VP at x=30-32, centerline x=31"}
+      ]
+    },
+    "aisles": [
+      {
+        "id": "A01",
+        "sides": {
+          "R": {
+            "x_center": 4,
+            "blocks": [
+              {"id": "A01-R-01", "x": 4, "y": 4},
+              {"id": "A01-R-02", "x": 4, "y": 8},
+              {"id": "A01-R-03", "x": 4, "y": 12},
+              {"id": "A01-R-04", "x": 4, "y": 16},
+              {"id": "A01-R-05", "x": 4, "y": 20},
+              {"id": "A01-R-06", "x": 4, "y": 24},
+              {"id": "A01-R-07", "x": 4, "y": 28},
+              {"id": "A01-R-08", "x": 4, "y": 32},
+              {"id": "A01-R-09", "x": 4, "y": 36},
+              {"id": "A01-R-10", "x": 4, "y": 40},
+              {"id": "A01-R-11", "x": 4, "y": 44},
+              {"id": "A01-R-12", "x": 4, "y": 48}
+            ]
+          },
+          "L": {
+            "x_center": 10,
+            "blocks": [
+              {"id": "A01-L-01", "x": 10, "y": 4},
+              {"id": "A01-L-02", "x": 10, "y": 8},
+              {"id": "A01-L-03", "x": 10, "y": 12},
+              {"id": "A01-L-04", "x": 10, "y": 16},
+              {"id": "A01-L-05", "x": 10, "y": 20},
+              {"id": "A01-L-06", "x": 10, "y": 24},
+              {"id": "A01-L-07", "x": 10, "y": 28},
+              {"id": "A01-L-08", "x": 10, "y": 32},
+              {"id": "A01-L-09", "x": 10, "y": 36},
+              {"id": "A01-L-10", "x": 10, "y": 40},
+              {"id": "A01-L-11", "x": 10, "y": 44},
+              {"id": "A01-L-12", "x": 10, "y": 48}
+            ]
+          }
+        }
+      },
+      {
+        "id": "A02",
+        "sides": {
+          "R": {
+            "x_center": 16,
+            "blocks": [
+              {"id": "A02-R-01", "x": 16, "y": 4},
+              {"id": "A02-R-02", "x": 16, "y": 8},
+              {"id": "A02-R-03", "x": 16, "y": 12},
+              {"id": "A02-R-04", "x": 16, "y": 16},
+              {"id": "A02-R-05", "x": 16, "y": 20},
+              {"id": "A02-R-06", "x": 16, "y": 24},
+              {"id": "A02-R-07", "x": 16, "y": 28},
+              {"id": "A02-R-08", "x": 16, "y": 32},
+              {"id": "A02-R-09", "x": 16, "y": 36},
+              {"id": "A02-R-10", "x": 16, "y": 40},
+              {"id": "A02-R-11", "x": 16, "y": 44},
+              {"id": "A02-R-12", "x": 16, "y": 48}
+            ]
+          },
+          "L": {
+            "x_center": 22,
+            "blocks": [
+              {"id": "A02-L-01", "x": 22, "y": 4},
+              {"id": "A02-L-02", "x": 22, "y": 8},
+              {"id": "A02-L-03", "x": 22, "y": 12},
+              {"id": "A02-L-04", "x": 22, "y": 16},
+              {"id": "A02-L-05", "x": 22, "y": 20},
+              {"id": "A02-L-06", "x": 22, "y": 24},
+              {"id": "A02-L-07", "x": 22, "y": 28},
+              {"id": "A02-L-08", "x": 22, "y": 32},
+              {"id": "A02-L-09", "x": 22, "y": 36},
+              {"id": "A02-L-10", "x": 22, "y": 40},
+              {"id": "A02-L-11", "x": 22, "y": 44},
+              {"id": "A02-L-12", "x": 22, "y": 48}
+            ]
+          }
+        }
+      },
+      {
+        "id": "A03",
+        "sides": {
+          "R": {
+            "x_center": 28,
+            "blocks": [
+              {"id": "A03-R-01", "x": 28, "y": 4},
+              {"id": "A03-R-02", "x": 28, "y": 8},
+              {"id": "A03-R-03", "x": 28, "y": 12},
+              {"id": "A03-R-04", "x": 28, "y": 16},
+              {"id": "A03-R-05", "x": 28, "y": 20},
+              {"id": "A03-R-06", "x": 28, "y": 24},
+              {"id": "A03-R-07", "x": 28, "y": 28},
+              {"id": "A03-R-08", "x": 28, "y": 32},
+              {"id": "A03-R-09", "x": 28, "y": 36},
+              {"id": "A03-R-10", "x": 28, "y": 40},
+              {"id": "A03-R-11", "x": 28, "y": 44},
+              {"id": "A03-R-12", "x": 28, "y": 48}
+            ]
+          },
+          "L": {
+            "x_center": 34,
+            "blocks": [
+              {"id": "A03-L-01", "x": 34, "y": 4},
+              {"id": "A03-L-02", "x": 34, "y": 8},
+              {"id": "A03-L-03", "x": 34, "y": 12},
+              {"id": "A03-L-04", "x": 34, "y": 16},
+              {"id": "A03-L-05", "x": 34, "y": 20},
+              {"id": "A03-L-06", "x": 34, "y": 24},
+              {"id": "A03-L-07", "x": 34, "y": 28},
+              {"id": "A03-L-08", "x": 34, "y": 32},
+              {"id": "A03-L-09", "x": 34, "y": 36},
+              {"id": "A03-L-10", "x": 34, "y": 40},
+              {"id": "A03-L-11", "x": 34, "y": 44},
+              {"id": "A03-L-12", "x": 34, "y": 48}
+            ]
+          }
+        }
+      }
+    ]
+  }
+}
