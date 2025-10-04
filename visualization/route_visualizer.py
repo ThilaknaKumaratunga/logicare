@@ -728,15 +728,20 @@ class RouteVisualizer:
     def save_plot(self, filename: str, dpi: int = 300) -> None:
         """
         Save the current plot to a file.
-        
+
         Args:
-            filename: Output filename (with extension, e.g., 'route.png')
-            dpi: Resolution in dots per inch
+            filename: Output filename (with extension, e.g., 'route.png', 'route.svg')
+            dpi: Resolution in dots per inch (for raster formats)
         """
         if self.fig is None:
             raise ValueError("No plot to save. Create a plot first.")
-        
-        self.fig.savefig(filename, dpi=dpi, bbox_inches='tight')
+
+        # Determine format from extension
+        file_ext = filename.lower().split('.')[-1]
+        if file_ext == 'svg':
+            self.fig.savefig(filename, format='svg', bbox_inches='tight')
+        else:
+            self.fig.savefig(filename, dpi=dpi, bbox_inches='tight')
         print(f"Plot saved to {filename}")
     
     def show(self) -> None:
