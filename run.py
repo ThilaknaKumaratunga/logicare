@@ -41,8 +41,8 @@ print(f"   ✓ Locations: {', '.join(locations)}\n")
 
 # 3. Assign cart
 print("3. Assigning cart...")
-cart = Cart(id="CART_001", capacity=100)
-print(f"   ✓ {cart.id} (capacity: {cart.capacity})\n")
+cart = Cart(id="CART_001", capacity=1000, weight_capacity=1000.0)
+print(f"   ✓ {cart.id} (capacity: {cart.capacity}, weight capacity: {cart.weight_capacity}kg)\n")
 
 # 4. Optimize
 print("4. Finding optimal route...")
@@ -77,7 +77,7 @@ if routes:
     print("COMPLETE!")
     print("="*60)
 
-    
+
     #viz.show()
 else:
     print("   ✗ No solution found")
