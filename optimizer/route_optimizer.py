@@ -267,14 +267,20 @@ class RouteOptimizer:
         return order_vars
     
     def _set_objective(self, r_vars: Dict, batches: List[Batch], carts: List[Cart]) -> None:
-        """Set objective function to minimize total travel time."""
+        """Set objective function to minimize total travel time with tie-breaking for fewer nodes."""
         objective_expr = 0
-        
+
+        # Primary objective: minimize travel time
         for (i, j, b_id, k_id), var in r_vars.items():
             edge = self.graph.get_edge(i, j)
             if edge:
                 objective_expr += edge.travel_time * var
-        
+
+        # Secondary objective: minimize number of edges (tie-breaker)
+        # Use a very small weight (0.001) so it only matters when travel times are equal
+        for (i, j, b_id, k_id), var in r_vars.items():
+            objective_expr += 0.001 * var
+
         self.model.minimize(objective_expr)
     
     def _add_flow_conservation_constraints(self, r_vars: Dict, visit_vars: Dict,
