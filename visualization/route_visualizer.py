@@ -212,6 +212,147 @@ class RouteVisualizer:
                 y_coords = [waypoints[j][1], waypoints[j+1][1]]
                 self.ax.plot(x_coords, y_coords, color=route_color, linewidth=4, alpha=0.8, zorder=5)
 
+    def _draw_passage_based_route(self, route: List[str], pos: dict, route_color: str) -> None:
+        """Draw route path through passage centerlines for block-based warehouses."""
+        if not self.ax or len(route) < 2:
+            return
+
+        # Extract passage centerlines from graph metadata
+        h_passages, v_passages = self._get_passage_centerlines()
+
+        for i in range(len(route) - 1):
+            from_node_id = route[i]
+            to_node_id = route[i + 1]
+
+            if from_node_id not in pos or to_node_id not in pos:
+                continue
+
+            from_x, from_y = pos[from_node_id]
+            to_x, to_y = pos[to_node_id]
+
+            # Build waypoints through passages
+            waypoints = [(from_x, from_y)]
+
+            # Find nearest vertical passages for from and to nodes
+            from_nearest_vp = min(v_passages, key=lambda x: abs(x - from_x))
+            to_nearest_vp = min(v_passages, key=lambda x: abs(x - to_x))
+
+            # Use bottom horizontal passage (y=1) for routing
+            hp_y = h_passages[0]
+
+            # Route: from_node → from_VP (horizontal) → HP (vertical down/up) →
+            #        along HP (horizontal) → to_VP (along HP) → to_node (horizontal)
+
+            # 1. Move horizontally to nearest VP at from_node's y-level
+            if from_x != from_nearest_vp:
+                waypoints.append((from_nearest_vp, from_y))
+
+            # 2. Move vertically along VP to horizontal passage
+            if from_y != hp_y:
+                waypoints.append((from_nearest_vp, hp_y))
+
+            # 3. Move horizontally along the horizontal passage to target VP
+            if from_nearest_vp != to_nearest_vp:
+                waypoints.append((to_nearest_vp, hp_y))
+
+            # 4. Move vertically along target VP to target node's y-level
+            if to_y != hp_y:
+                waypoints.append((to_nearest_vp, to_y))
+
+            # 5. Move horizontally to target node
+            if to_x != to_nearest_vp:
+                waypoints.append((to_x, to_y))
+
+            # If last waypoint is not the target, add it
+            if waypoints[-1] != (to_x, to_y):
+                waypoints.append((to_x, to_y))
+
+            # Draw the path segments
+            for j in range(len(waypoints) - 1):
+                x_coords = [waypoints[j][0], waypoints[j+1][0]]
+                y_coords = [waypoints[j][1], waypoints[j+1][1]]
+                self.ax.plot(x_coords, y_coords, color=route_color, linewidth=4, alpha=0.8, zorder=5)
+
+    def _get_passage_centerlines(self):
+        """Extract passage centerlines from graph metadata or infer from structure."""
+        # Try to get from graph metadata (if available)
+        if hasattr(self.graph, 'metadata') and 'passages' in self.graph.metadata:
+            passages = self.graph.metadata['passages']
+            h_passages = passages.get('horizontal', [])
+            v_passages = passages.get('vertical', [])
+            return h_passages, v_passages
+
+        # Fallback: infer from node positions and edge types
+        # For block-based warehouses: every 6 units horizontally (0, 6, 12, 18, 24, 30, 36...)
+        all_nodes = [n for n in self.graph.nodes.values() if n.node_type != 'depot']
+        if not all_nodes:
+            return [1, 18], [1, 7, 13, 19, 25, 31]
+
+        all_x = sorted(set(n.x for n in all_nodes))
+        all_y = sorted(set(n.y for n in all_nodes))
+
+        # Infer vertical passages (between groups of x-coordinates)
+        v_passages = []
+        if all_x:
+            # Passages are typically halfway between aisle columns
+            # For x = 4, 10, 16, 22, 28, 34 -> passages at 1, 7, 13, 19, 25, 31
+            min_x = min(all_x)
+            for x in all_x:
+                if x >= 4:
+                    passage_x = x - 3
+                    if passage_x not in v_passages:
+                        v_passages.append(passage_x)
+            # Add leftmost passage
+            if min_x >= 4:
+                v_passages.insert(0, 1)
+
+        # Infer horizontal passages (typically at min and max y)
+        h_passages = []
+        if all_y:
+            min_y, max_y = min(all_y), max(all_y)
+            h_passages = [min_y - 3, max_y + 2]  # Bottom and top passages
+
+        return h_passages, v_passages
+
+    def _draw_block_bounding_boxes(self) -> None:
+        """Draw bounding boxes for each 4×4 storage block."""
+        if not self.ax:
+            return
+
+        # Block size (4×4 units)
+        block_size = 4
+
+        # Draw bounding box for each product node
+        for node_id, node in self.graph.nodes.items():
+            if node.node_type != 'product':
+                continue
+
+            # Block center is at (node.x, node.y)
+            # Bounding box corners: (x-2, y-2) to (x+2, y+2)
+            block_rect = mpatches.Rectangle(
+                (node.x - block_size/2, node.y - block_size/2),
+                block_size,
+                block_size,
+                linewidth=1.5,
+                edgecolor='darkblue',
+                facecolor='lightblue',
+                alpha=0.2,
+                zorder=1
+            )
+            self.ax.add_patch(block_rect)
+
+            # Add block ID as text in the center
+            self.ax.text(
+                node.x, node.y,
+                node_id,
+                fontsize=8,
+                ha='center',
+                va='center',
+                color='darkblue',
+                weight='bold',
+                zorder=2
+            )
+
     def _draw_passages(self) -> None:
         """Draw passage corridors where movement occurs."""
         if not self.ax:
@@ -221,49 +362,41 @@ class RouteVisualizer:
         if not all_nodes:
             return
 
-        # Get y-range
+        # Get coordinate ranges
+        all_x = [n.x for n in all_nodes]
         all_y = [n.y for n in all_nodes]
+        min_x, max_x = min(all_x), max(all_x)
         min_y, max_y = min(all_y), max(all_y)
 
-        # Draw vertical aisle corridors at x=1, x=4, x=7
-        # These are the passages between L and R sides
-        aisle_passages = [1, 4, 7]
-        for passage_x in aisle_passages:
-            aisle_rect = mpatches.Rectangle(
-                (passage_x - 0.3, min_y - 0.5),
-                0.6,
-                max_y - min_y + 1.0,
-                linewidth=1,
-                edgecolor='gray',
-                facecolor='lightgray',
-                alpha=0.4,
-                zorder=0
-            )
-            self.ax.add_patch(aisle_rect)
+        # Get passage centerlines
+        h_passages, v_passages = self._get_passage_centerlines()
 
-        # Extract horizontal passage y-levels from cross_aisle edges
-        passage_y_levels = set()
-        for edge in self.graph.edges:
-            if edge.metadata.get('type') == 'cross_aisle':
-                from_node = self.graph.nodes.get(edge.from_node)
-                to_node = self.graph.nodes.get(edge.to_node)
-                if from_node and to_node and from_node.y == to_node.y:
-                    passage_y_levels.add(from_node.y)
-
-        # Draw horizontal cross-aisle passages
-        if passage_y_levels:
-            all_x = [n.x for n in all_nodes]
-            min_x, max_x = min(all_x), max(all_x)
-
-            for passage_y in sorted(passage_y_levels):
+        # Draw vertical passages
+        for vp_x in v_passages:
+            if vp_x >= min_x - 10 and vp_x <= max_x + 10:
                 passage_rect = mpatches.Rectangle(
-                    (min_x - 0.5, passage_y - 0.3),
-                    max_x - min_x + 1.0,
-                    0.6,
+                    (vp_x - 1, 0),
+                    2,
+                    max_y + 2,
+                    linewidth=1,
+                    edgecolor='gray',
+                    facecolor='lightgray',
+                    alpha=0.3,
+                    zorder=0
+                )
+                self.ax.add_patch(passage_rect)
+
+        # Draw horizontal passages
+        for hp_y in h_passages:
+            if hp_y >= min_y - 5 and hp_y <= max_y + 5:
+                passage_rect = mpatches.Rectangle(
+                    (0, hp_y - 1),
+                    max_x + 2,
+                    2,
                     linewidth=1,
                     edgecolor='orange',
                     facecolor='lightyellow',
-                    alpha=0.4,
+                    alpha=0.3,
                     zorder=0
                 )
                 self.ax.add_patch(passage_rect)
@@ -448,22 +581,17 @@ class RouteVisualizer:
         self.plot_layout(figsize=figsize, show_edge_labels=False,
                         title=f"Optimized Route - Batch {batch_id}, Cart {cart_id}")
 
+        # Draw passages
+        self._draw_passages()
+
+        # Draw block bounding boxes
+        self._draw_block_bounding_boxes()
+
         G = self.create_networkx_graph()
         pos = nx.get_node_attributes(G, 'pos')
 
-        # Draw direct route path
-        route_edges = [(route[i], route[i+1]) for i in range(len(route)-1)]
-        nx.draw_networkx_edges(
-            G, pos,
-            edgelist=route_edges,
-            edge_color=route_color,
-            width=4,
-            alpha=0.8,
-            arrows=True,
-            arrowsize=20,
-            arrowstyle='->',
-            ax=self.ax
-        )
+        # Draw passage-based route path
+        self._draw_passage_based_route(route, pos, route_color)
         
         # Highlight visited nodes
         visited_nodes = list(set(route))  # Remove duplicates

@@ -150,6 +150,17 @@ class JSONLayoutImporter(CADAdapterInterface):
         """
         graph = WarehouseGraph()
 
+        # Store passage data in graph metadata for visualization
+        passages = warehouse_data.get('passages', {})
+        h_passages = [p['y'] for p in passages.get('horizontal', [])]
+        v_passages = [p['x'] for p in passages.get('vertical', [])]
+        graph.metadata = {
+            'passages': {
+                'horizontal': h_passages,
+                'vertical': v_passages
+            }
+        }
+
         # Add depot node
         depot_data = warehouse_data.get('depot', {'x': 2, 'y': 1, 'id': 'DEPOT'})
         depot_node = Node(
