@@ -360,15 +360,16 @@ class RouteVisualizer:
             ax=self.ax
         )
         
-        nx.draw_networkx_nodes(
-            G, pos,
-            nodelist=location_nodes,
-            node_color='lightblue',
-            node_size=500,
-            node_shape='o',
-            label='Locations',
-            ax=self.ax
-        )
+        # Don't draw location nodes as circles - just show labels
+        # nx.draw_networkx_nodes(
+        #     G, pos,
+        #     nodelist=location_nodes,
+        #     node_color='lightblue',
+        #     node_size=500,
+        #     node_shape='o',
+        #     label='Locations',
+        #     ax=self.ax
+        # )
         
         # Draw edges
         # Separate bidirectional and unidirectional edges
