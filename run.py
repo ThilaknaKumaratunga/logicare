@@ -52,6 +52,36 @@ batch.add_item(PickItem(sku="Produce-Bananas", location_id="A03-L-07", quantity=
 batch.add_item(PickItem(sku="Dairy-Yogurt", location_id="A01-L-04", quantity=2, weight=1.0))
 batch.add_item(PickItem(sku="Frozen-Pizza", location_id="A09-R-19", quantity=1, weight=1.5))
 batch.add_item(PickItem(sku="Snacks-Nuts", location_id="A07-R-05", quantity=2, weight=0.9))
+batch.add_item(PickItem(sku="Canned-Soup", location_id="A04-L-10", quantity=2, weight=1.1))
+batch.add_item(PickItem(sku="Rice-LongGrain", location_id="A02-R-13", quantity=3, weight=2.0))
+batch.add_item(PickItem(sku="Oil-Olive", location_id="A05-L-06", quantity=1, weight=1.3))
+batch.add_item(PickItem(sku="Spices-Pepper", location_id="A08-R-04", quantity=2, weight=0.3))
+batch.add_item(PickItem(sku="Tea-GreenTea", location_id="A03-L-11", quantity=3, weight=0.5))
+batch.add_item(PickItem(sku="Coffee-Ground", location_id="A06-R-09", quantity=2, weight=0.9))
+batch.add_item(PickItem(sku="Candy-Chocolate", location_id="A09-R-06", quantity=4, weight=0.6))
+batch.add_item(PickItem(sku="PetFood-DogFood", location_id="A01-L-17", quantity=1, weight=3.0))
+batch.add_item(PickItem(sku="BabyFood-Puree", location_id="A10-R-10", quantity=2, weight=0.7))
+batch.add_item(PickItem(sku="Batteries-AA", location_id="A07-R-14", quantity=3, weight=0.4))
+batch.add_item(PickItem(sku="Paper-Towels", location_id="A04-L-12", quantity=2, weight=1.2))
+batch.add_item(PickItem(sku="Toilet-Paper", location_id="A02-R-17", quantity=3, weight=1.5))
+batch.add_item(PickItem(sku="Soap-BarSoap", location_id="A05-L-19", quantity=2, weight=0.6))
+batch.add_item(PickItem(sku="Toothpaste-Mint", location_id="A08-R-08", quantity=1, weight=0.3))
+batch.add_item(PickItem(sku="Diapers-M", location_id="A03-L-15", quantity=1, weight=2.5))
+batch.add_item(PickItem(sku="Vitamins-C", location_id="A06-R-16", quantity=2, weight=0.4))
+batch.add_item(PickItem(sku="FirstAid-Bandages", location_id="A09-R-11", quantity=3, weight=0.2))
+batch.add_item(PickItem(sku="Sauces-Tomato", location_id="A01-L-13", quantity=2, weight=1.0))
+batch.add_item(PickItem(sku="Vinegar-White", location_id="A10-R-07", quantity=1, weight=1.1))
+batch.add_item(PickItem(sku="Sugar-White", location_id="A07-R-18", quantity=2, weight=1.8))
+batch.add_item(PickItem(sku="Flour-AllPurpose", location_id="A04-L-09", quantity=1, weight=2.2))
+batch.add_item(PickItem(sku="Eggs-Dozen", location_id="A02-R-03", quantity=2, weight=1.4))
+batch.add_item(PickItem(sku="Butter-Salted", location_id="A05-L-16", quantity=1, weight=0.9))
+batch.add_item(PickItem(sku="Cheese-Cheddar", location_id="A08-R-19", quantity=2, weight=1.3))
+batch.add_item(PickItem(sku="Fish-Salmon", location_id="A03-L-05", quantity=1, weight=1.9))
+batch.add_item(PickItem(sku="Vegetables-Carrots", location_id="A06-R-12", quantity=3, weight=1.1))
+batch.add_item(PickItem(sku="Fruit-Oranges", location_id="A09-R-14", quantity=2, weight=1.4))
+batch.add_item(PickItem(sku="Nuts-Almonds", location_id="A01-L-08", quantity=2, weight=0.8))
+batch.add_item(PickItem(sku="Juice-Orange", location_id="A10-R-15", quantity=3, weight=1.6))
+batch.add_item(PickItem(sku="Water-Bottled", location_id="A07-R-10", quantity=4, weight=2.8))
 
 locations = [l for l in batch.get_required_locations() if l != 'DEPOT']
 print(f"   ✓ {batch.total_items()} items ({batch.total_weight():.1f}kg) from {len(locations)} locations")
@@ -59,7 +89,7 @@ print(f"   ✓ Locations: {', '.join(locations)}\n")
 
 # 3. Assign cart
 print("3. Assigning cart...")
-cart = Cart(id="CART_001", capacity=100, weight_capacity=100.0)
+cart = Cart(id="CART_001", capacity=1000, weight_capacity=1000.0)
 print(f"   ✓ {cart.id} (capacity: {cart.capacity}, weight capacity: {cart.weight_capacity}kg)\n")
 
 # 4. Optimize
@@ -95,7 +125,7 @@ if routes:
     print("COMPLETE!")
     print("="*60)
 
-    
+
     #viz.show()
 else:
     print("   ✗ No solution found")
