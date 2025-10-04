@@ -76,7 +76,7 @@ class RouteVisualizer:
     def _get_visual_position(self, node):
         """Map logical coordinates to visual coordinates.
 
-        Storage blocks at passage y-levels (1, 12) are offset visually
+        Storage blocks at passage y-levels are offset visually
         so passages appear as open corridors.
         """
         x, y = node.x, node.y
@@ -84,14 +84,19 @@ class RouteVisualizer:
         if node.node_type == 'depot':
             return (x, y)
 
-        # Offset storage blocks at passage y-levels
-        passage_levels = [1, 20]
+        # Calculate passage levels dynamically for grid layout
+        # Passages at y=1,20,23,42,45,64,67,86,89,108
+        passage_levels = []
+        for row in range(5):
+            base_y = row * 22
+            passage_levels.extend([base_y + 1, base_y + 20])
+
         if y in passage_levels:
             # Shift blocks slightly away from passage corridor
-            # Blocks at y=1 shift to y=1.3, blocks at y=20 shift to y=19.7
-            if y == 1:
+            # Bottom passages shift up, top passages shift down
+            if (y - 1) % 22 == 0:  # Bottom passage
                 visual_y = y + 0.3
-            elif y == 20:
+            elif (y - 20) % 22 == 0:  # Top passage
                 visual_y = y - 0.3
             else:
                 visual_y = y
@@ -109,10 +114,15 @@ class RouteVisualizer:
         if not self.ax or len(route) < 2:
             return
 
-        # Passage coordinates (vertical aisles and horizontal passages)
-        # Updated for 10 aisles: passages at x=1,4,7,10,13,16,19,22,25,28
-        vertical_passages = [1, 4, 7, 10, 13, 16, 19, 22, 25, 28]  # x-coordinates of vertical aisle passages
-        horizontal_passages = [1, 20]  # y-coordinates of horizontal cross-aisle passages
+        # Passage coordinates for 20x5 grid (100 aisles)
+        # Vertical passages between aisles: x=1,4,7,...,58 (every 3 units, 20 aisles)
+        vertical_passages = [1 + i * 3 for i in range(20)]  # x-coordinates of vertical aisle passages
+
+        # Horizontal passages at y=1,20 (row 0), y=23,42 (row 1), y=45,64 (row 2), etc.
+        horizontal_passages = []
+        for row in range(5):
+            base_y = row * 22
+            horizontal_passages.extend([base_y + 1, base_y + 20])
 
         for i in range(len(route) - 1):
             from_node = route[i]
@@ -142,29 +152,10 @@ class RouteVisualizer:
             waypoints = [(from_x, from_y)]
 
             # Determine which vertical passage to use based on x-coordinate
-            # A01 (x=0,2) uses x=1, A02 (x=3,5) uses x=4, A03 (x=6,8) uses x=7
-            # A04 (x=9,11) uses x=10, A05 (x=12,14) uses x=13, A06 (x=15,17) uses x=16
-            # A07 (x=18,20) uses x=19, A08 (x=21,23) uses x=22, A09 (x=24,26) uses x=25, A10 (x=27,29) uses x=28
-            if from_x <= 2:
-                aisle_passage_x = 1
-            elif from_x <= 5:
-                aisle_passage_x = 4
-            elif from_x <= 8:
-                aisle_passage_x = 7
-            elif from_x <= 11:
-                aisle_passage_x = 10
-            elif from_x <= 14:
-                aisle_passage_x = 13
-            elif from_x <= 17:
-                aisle_passage_x = 16
-            elif from_x <= 20:
-                aisle_passage_x = 19
-            elif from_x <= 23:
-                aisle_passage_x = 22
-            elif from_x <= 26:
-                aisle_passage_x = 25
-            else:
-                aisle_passage_x = 28
+            # Each aisle is 3 units wide (L=0, passage=1, R=2)
+            # Calculate which aisle column the x-coordinate belongs to
+            aisle_col = from_x // 3
+            aisle_passage_x = aisle_col * 3 + 1
 
             if edge_type == 'depot_to_passage':
                 # Movement from depot to passage nodes
@@ -175,40 +166,12 @@ class RouteVisualizer:
                 waypoints.append((to_x, to_y))  # Move horizontally along passage
             elif edge_type == 'cross_aisle':
                 # Horizontal movement along passage
-                # Check if we're crossing through an aisle (need to route through vertical passage)
                 # Determine target aisle passage
-                if to_x <= 2:
-                    target_aisle_passage_x = 1
-                elif to_x <= 5:
-                    target_aisle_passage_x = 4
-                elif to_x <= 8:
-                    target_aisle_passage_x = 7
-                elif to_x <= 11:
-                    target_aisle_passage_x = 10
-                elif to_x <= 14:
-                    target_aisle_passage_x = 13
-                elif to_x <= 17:
-                    target_aisle_passage_x = 16
-                elif to_x <= 20:
-                    target_aisle_passage_x = 19
-                elif to_x <= 23:
-                    target_aisle_passage_x = 22
-                elif to_x <= 26:
-                    target_aisle_passage_x = 25
-                else:
-                    target_aisle_passage_x = 28
+                target_aisle_col = to_x // 3
+                target_aisle_passage_x = target_aisle_col * 3 + 1
 
                 # Check if from and to are in same aisle
-                same_aisle = (from_x <= 2 and to_x <= 2) or \
-                            (3 <= from_x <= 5 and 3 <= to_x <= 5) or \
-                            (6 <= from_x <= 8 and 6 <= to_x <= 8) or \
-                            (9 <= from_x <= 11 and 9 <= to_x <= 11) or \
-                            (12 <= from_x <= 14 and 12 <= to_x <= 14) or \
-                            (15 <= from_x <= 17 and 15 <= to_x <= 17) or \
-                            (18 <= from_x <= 20 and 18 <= to_x <= 20) or \
-                            (21 <= from_x <= 23 and 21 <= to_x <= 23) or \
-                            (24 <= from_x <= 26 and 24 <= to_x <= 26) or \
-                            (27 <= from_x and 27 <= to_x)
+                same_aisle = (from_x // 3) == (to_x // 3)
 
                 if same_aisle and from_x != to_x:
                     # Within same aisle but different sides (L to R or R to L)
@@ -257,14 +220,17 @@ class RouteVisualizer:
         if not all_nodes:
             return
 
-        # Get y-range
+        # Get coordinate ranges
+        all_x = [n.x for n in all_nodes]
         all_y = [n.y for n in all_nodes]
+        min_x, max_x = min(all_x), max(all_x)
         min_y, max_y = min(all_y), max(all_y)
 
-        # Draw vertical aisle corridors for all 10 aisles
+        # Draw vertical aisle corridors for 20x5 grid (20 columns)
         # These are the passages between L and R sides
-        aisle_passages = [1, 4, 7, 10, 13, 16, 19, 22, 25, 28]
-        for passage_x in aisle_passages:
+        num_columns = 20
+        for col in range(num_columns):
+            passage_x = col * 3 + 1
             aisle_rect = mpatches.Rectangle(
                 (passage_x - 0.3, min_y - 0.5),
                 0.6,
@@ -286,11 +252,15 @@ class RouteVisualizer:
                 if from_node and to_node and from_node.y == to_node.y:
                     passage_y_levels.add(from_node.y)
 
+        # If no cross_aisle edges found, calculate passages for grid layout
+        if not passage_y_levels:
+            for row in range(5):
+                base_y = row * 22
+                passage_y_levels.add(base_y + 1)
+                passage_y_levels.add(base_y + 20)
+
         # Draw horizontal cross-aisle passages
         if passage_y_levels:
-            all_x = [n.x for n in all_nodes]
-            min_x, max_x = min(all_x), max(all_x)
-
             for passage_y in sorted(passage_y_levels):
                 passage_rect = mpatches.Rectangle(
                     (min_x - 0.5, passage_y - 0.3),
@@ -361,7 +331,7 @@ class RouteVisualizer:
             ax.add_patch(aisle_rect)
 
     def plot_layout(self,
-                   figsize: Tuple[int, int] = (32, 20),
+                   figsize: Tuple[int, int] = (60, 110),
                    show_edge_labels: bool = True,
                    title: str = "Warehouse Layout") -> None:
         """
@@ -463,7 +433,7 @@ class RouteVisualizer:
                   batch_id: str = "1",
                   cart_id: str = "1",
                   route_color: str = 'blue',
-                  figsize: Tuple[int, int] = (32, 20),
+                  figsize: Tuple[int, int] = (60, 110),
                   show_sequence: bool = True,
                   cart_info: Optional[Dict] = None,
                   pick_locations: Optional[List[str]] = None) -> None:
@@ -627,17 +597,17 @@ class RouteVisualizer:
         
         self.ax.legend(loc='upper right')
     
-    def save_plot(self, filename: str, dpi: int = 300) -> None:
+    def save_plot(self, filename: str, dpi: int = 600) -> None:
         """
         Save the current plot to a file.
-        
+
         Args:
             filename: Output filename (with extension, e.g., 'route.png')
-            dpi: Resolution in dots per inch
+            dpi: Resolution in dots per inch (default: 600 for high quality)
         """
         if self.fig is None:
             raise ValueError("No plot to save. Create a plot first.")
-        
+
         self.fig.savefig(filename, dpi=dpi, bbox_inches='tight')
         print(f"Plot saved to {filename}")
     
