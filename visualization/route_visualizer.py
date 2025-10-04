@@ -448,14 +448,22 @@ class RouteVisualizer:
         self.plot_layout(figsize=figsize, show_edge_labels=False,
                         title=f"Optimized Route - Batch {batch_id}, Cart {cart_id}")
 
-        # Draw passage corridors
-        self._draw_passages()
-
         G = self.create_networkx_graph()
         pos = nx.get_node_attributes(G, 'pos')
 
-        # Draw route path through passages
-        self._draw_route_through_passages(route, pos, route_color)
+        # Draw direct route path
+        route_edges = [(route[i], route[i+1]) for i in range(len(route)-1)]
+        nx.draw_networkx_edges(
+            G, pos,
+            edgelist=route_edges,
+            edge_color=route_color,
+            width=4,
+            alpha=0.8,
+            arrows=True,
+            arrowsize=20,
+            arrowstyle='->',
+            ax=self.ax
+        )
         
         # Highlight visited nodes
         visited_nodes = list(set(route))  # Remove duplicates
