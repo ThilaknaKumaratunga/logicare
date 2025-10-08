@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Simple Warehouse Route Optimization
-====================================
+Warehouse Route Optimization from DXF
+======================================
 
-One warehouse + One batch + One cart = One optimal route
+Load warehouse layout from DXF file and optimize picking route.
 """
 
 import sys
@@ -17,27 +17,27 @@ from optimizer.batch import Batch, PickItem, Cart
 from optimizer.route_optimizer import RouteOptimizer
 from visualization.route_visualizer import RouteVisualizer
 
-# Setup simple logging
+# Setup logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 print("\n" + "="*60)
 print("WAREHOUSE ROUTE OPTIMIZATION")
 print("="*60 + "\n")
 
-# 1. Load warehouse
-print("1. Loading warehouse...")
-warehouse = LayoutImporter().load_from_json('data/warehouse_blocks.json')
+# 1. Load warehouse from DXF
+print("1. Loading warehouse from DXF...")
+warehouse = LayoutImporter().import_from_file('Sample_warehouse_01.dxf')
 print(f"   ✓ {len(warehouse.nodes)} locations, {len(warehouse.edges)} paths\n")
 
 # 2. Create order
 print("2. Creating order...")
 batch = Batch(id="ORDER_001", depot_id="DEPOT")
 batch.add_item(PickItem(sku="Snacks-ChipsA", location_id="A02-R-02", quantity=2, weight=0.5))
-batch.add_item(PickItem(sku="Beverages-Juice", location_id="A02-L-04", quantity=3, weight=1.2))
-batch.add_item(PickItem(sku="Beverages-Juice", location_id="A02-R-04", quantity=3, weight=1.2))
-batch.add_item(PickItem(sku="Beverages-Juice", location_id="A01-L-03", quantity=3, weight=1.2))
-batch.add_item(PickItem(sku="Beverages-Juice", location_id="A01-R-04", quantity=3, weight=1.2))
-batch.add_item(PickItem(sku="Beverages-Juice", location_id="A01-L-04", quantity=3, weight=1.2))
+# batch.add_item(PickItem(sku="Beverages-Juice", location_id="A02-L-04", quantity=3, weight=1.2))
+# batch.add_item(PickItem(sku="Beverages-Juice", location_id="A02-R-04", quantity=3, weight=1.2))
+# batch.add_item(PickItem(sku="Beverages-Juice", location_id="A01-L-03", quantity=3, weight=1.2))
+# batch.add_item(PickItem(sku="Beverages-Juice", location_id="A01-R-04", quantity=3, weight=1.2))
+# batch.add_item(PickItem(sku="Beverages-Juice", location_id="A01-L-04", quantity=3, weight=1.2))
 
 locations = [l for l in batch.get_required_locations() if l != 'DEPOT']
 print(f"   ✓ {batch.total_items()} items ({batch.total_weight():.1f}kg) from {len(locations)} locations")
@@ -48,7 +48,7 @@ print("3. Assigning cart...")
 cart = Cart(id="CART_001", capacity=1000, weight_capacity=1000.0)
 print(f"   ✓ {cart.id} (capacity: {cart.capacity}, weight capacity: {cart.weight_capacity}kg)\n")
 
-# 4. Optimize
+# 4. Optimize route
 print("4. Finding optimal route...")
 optimizer = RouteOptimizer(warehouse, time_limit=30)
 routes = optimizer.optimize([batch], [cart])
@@ -63,7 +63,6 @@ if routes:
     import os
     os.makedirs("output", exist_ok=True)
 
-    # Prepare cart information for visualization
     cart_info = {
         'capacity': cart.capacity,
         'items': batch.total_items(),
@@ -80,8 +79,5 @@ if routes:
     print("="*60)
     print("COMPLETE!")
     print("="*60)
-
-
-    #viz.show()
 else:
     print("   ✗ No solution found")
