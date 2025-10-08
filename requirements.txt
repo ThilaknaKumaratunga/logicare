@@ -2,3 +2,6 @@ ezdxf
 docplex
 matplotlib
 networkx
+simpy
+numpy
+pillow

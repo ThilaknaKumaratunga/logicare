@@ -3,16 +3,19 @@ Route Visualizer for DXF-based Warehouse Graphs
 
 Visualizes warehouse layouts from DXF files showing:
 - Passage corridors (gray lines with distances)
-- Aisle storage blocks (yellow squares at centroids)
-- Depot (orange diamond at centroid)
+- Aisle storage blocks (polylines with centroids)
+- Depot (polyline with centroid)
 - Optimized routes through the warehouse
 """
 
 import logging
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib.patches import Polygon
 import networkx as nx
+import ezdxf
 from typing import Dict, List, Tuple, Optional
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -20,16 +23,57 @@ logger = logging.getLogger(__name__)
 class RouteVisualizer:
     """Visualizes DXF-based warehouse graphs and optimized routes."""
 
-    def __init__(self, graph):
+    def __init__(self, graph, dxf_file: str = None):
         """
         Initialize the visualizer with a warehouse graph.
 
         Args:
             graph: WarehouseGraph object with nodes and edges
+            dxf_file: Optional path to DXF file for extracting polylines
         """
         self.graph = graph
+        self.dxf_file = dxf_file
         self.fig = None
         self.ax = None
+        self.dxf_polygons = None
+
+        if dxf_file:
+            self._load_dxf_polygons()
+
+    def _load_dxf_polygons(self):
+        """Load polylines from DXF file for aisles, depot, and boundary."""
+        try:
+            doc = ezdxf.readfile(self.dxf_file)
+            msp = doc.modelspace()
+
+            self.dxf_polygons = {
+                'aisles': {},
+                'depot': None,
+                'boundary': None
+            }
+
+            aisle_pattern = re.compile(r'^A\d+-[RL]-\d+$')
+
+            for entity in msp:
+                if entity.dxftype() == 'LWPOLYLINE':
+                    layer_name = entity.dxf.layer
+
+                    # Extract points
+                    points = [(p[0], p[1]) for p in entity.get_points()]
+
+                    if aisle_pattern.match(layer_name):
+                        # Aisle polyline
+                        self.dxf_polygons['aisles'][layer_name] = points
+                    elif layer_name.lower() == 'depot':
+                        # Depot polyline
+                        self.dxf_polygons['depot'] = points
+                    elif layer_name.lower() == 'boundary':
+                        # Boundary polyline
+                        self.dxf_polygons['boundary'] = points
+
+        except Exception as e:
+            logger.warning(f"Could not load DXF polygons: {e}")
+            self.dxf_polygons = None
 
     def create_networkx_graph(self) -> nx.Graph:
         """Convert internal graph to NetworkX Graph for visualization."""
@@ -55,6 +99,49 @@ class RouteVisualizer:
 
         return G
 
+    def _draw_dxf_polygons(self):
+        """Draw polylines from DXF file (aisles, depot, boundary)."""
+        if not self.dxf_polygons or not self.ax:
+            return
+
+        # Draw boundary
+        if self.dxf_polygons['boundary']:
+            boundary_poly = Polygon(
+                self.dxf_polygons['boundary'],
+                fill=False,
+                edgecolor='black',
+                linewidth=2,
+                linestyle='-',
+                zorder=1
+            )
+            self.ax.add_patch(boundary_poly)
+
+        # Draw depot
+        if self.dxf_polygons['depot']:
+            depot_poly = Polygon(
+                self.dxf_polygons['depot'],
+                fill=True,
+                facecolor='orange',
+                edgecolor='darkred',
+                alpha=0.3,
+                linewidth=2,
+                zorder=2
+            )
+            self.ax.add_patch(depot_poly)
+
+        # Draw aisles
+        for aisle_name, points in self.dxf_polygons['aisles'].items():
+            aisle_poly = Polygon(
+                points,
+                fill=True,
+                facecolor='yellow',
+                edgecolor='black',
+                alpha=0.3,
+                linewidth=1.5,
+                zorder=2
+            )
+            self.ax.add_patch(aisle_poly)
+
     def plot_layout(self, figsize: Tuple[int, int] = (16, 12), title: str = "Warehouse Layout") -> None:
         """
         Plot the basic warehouse layout.
@@ -67,6 +154,9 @@ class RouteVisualizer:
         pos = nx.get_node_attributes(G, 'pos')
 
         self.fig, self.ax = plt.subplots(figsize=figsize)
+
+        # Draw DXF polygons first (as background)
+        self._draw_dxf_polygons()
 
         # Separate nodes by type
         passage_nodes = []

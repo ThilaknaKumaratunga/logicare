@@ -71,7 +71,7 @@ if routes:
 
     pick_locations = [item.location_id for item in batch.items]
 
-    viz = RouteVisualizer(warehouse)
+    viz = RouteVisualizer(warehouse, dxf_file='Sample_warehouse_01.dxf')
     viz.plot_route(route.get_node_sequence(), batch.id, cart.id, cart_info=cart_info, pick_locations=pick_locations)
     viz.save_plot("output/route.png")
     print(f"   ✓ Saved: output/route.png\n")
