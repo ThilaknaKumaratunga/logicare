@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """
-Warehouse Route Simulation
-===========================
+Warehouse Route Optimization & Simulation
+==========================================
 
-Simulates cart movement through the warehouse with animated visualization.
-Creates an animated GIF showing the cart moving along the optimized route.
+Complete workflow:
+1. Load warehouse from DXF
+2. Create order and assign cart
+3. Optimize route
+4. Save static route visualization
+5. Create animated simulation
 """
 
 import sys
 import logging
+import os
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -16,19 +21,23 @@ sys.path.insert(0, str(Path(__file__).parent))
 from cad_adapter.layout_importer import LayoutImporter
 from optimizer.batch import Batch, PickItem, Cart
 from optimizer.route_optimizer import RouteOptimizer
+from visualization.route_visualizer import RouteVisualizer
 from visualization.route_simulation import RouteSimulator
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 print("\n" + "="*60)
-print("WAREHOUSE ROUTE SIMULATION")
+print("WAREHOUSE ROUTE OPTIMIZATION & SIMULATION")
 print("="*60 + "\n")
 
 # Configuration
 DXF_FILE = 'Sample_warehouse_01.dxf'
 ANIMATION_DURATION = 15  # seconds
 ANIMATION_FPS = 30
+
+# Create output directory
+os.makedirs("output", exist_ok=True)
 
 # 1. Load warehouse from DXF
 print("1. Loading warehouse from DXF...")
@@ -44,7 +53,9 @@ batch.add_item(PickItem(sku="Beverages-Juice", location_id="A02-R-04", quantity=
 batch.add_item(PickItem(sku="Beverages-Juice", location_id="A01-L-03", quantity=3, weight=1.2))
 batch.add_item(PickItem(sku="Beverages-Juice", location_id="A01-R-04", quantity=3, weight=1.2))
 batch.add_item(PickItem(sku="Beverages-Juice", location_id="A01-L-04", quantity=3, weight=1.2))
-
+batch.add_item(PickItem(sku="Snacks-ChipsA", location_id="A01-R-02", quantity=2, weight=0.5))
+batch.add_item(PickItem(sku="Snacks-ChipsA", location_id="A01-R-02", quantity=2, weight=0.5))
+batch.add_item(PickItem(sku="Snacks-ChipsA", location_id="A02-L-02", quantity=2, weight=0.5))
 locations = [l for l in batch.get_required_locations() if l != 'DEPOT']
 print(f"   ✓ {batch.total_items()} items ({batch.total_weight():.1f}kg) from {len(locations)} locations")
 print(f"   ✓ Locations: {', '.join(locations)}\n")
@@ -65,13 +76,23 @@ if routes:
     print(f"   ✓ Route: {' → '.join(route_sequence)}")
     print(f"   ✓ Distance: {route.total_time:.2f} units\n")
 
-    # 5. Create animated simulation
-    print("5. Creating animated simulation...")
-    import os
-    os.makedirs("output", exist_ok=True)
-
     pick_locations = [item.location_id for item in batch.items]
 
+    cart_info = {
+        'capacity': cart.capacity,
+        'items': batch.total_items(),
+        'weight': batch.total_weight()
+    }
+
+    # 5. Save static route visualization
+    print("5. Creating static route visualization...")
+    viz = RouteVisualizer(warehouse, dxf_file=DXF_FILE)
+    viz.plot_route(route_sequence, batch.id, cart.id, cart_info=cart_info, pick_locations=pick_locations)
+    viz.save_plot("output/route.png")
+    print(f"   ✓ Saved: output/route.png\n")
+
+    # 6. Create animated simulation
+    print("6. Creating animated simulation...")
     simulator = RouteSimulator(
         graph=warehouse,
         dxf_file=DXF_FILE,
@@ -91,7 +112,10 @@ if routes:
     print(f"   ✓ Duration: {ANIMATION_DURATION}s @ {ANIMATION_FPS}fps\n")
 
     print("="*60)
-    print("SIMULATION COMPLETE!")
+    print("COMPLETE!")
+    print("="*60)
+    print(f"📊 Static route: output/route.png")
+    print(f"🎬 Animation: output/simulation.gif")
     print("="*60)
 else:
     print("   ✗ No solution found")
